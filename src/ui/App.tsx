@@ -1,5 +1,5 @@
 import { ChangeEvent, CSSProperties, useEffect, useMemo, useState } from "react";
-import { Check, Pencil, Plus, RefreshCw, Star, Trash2, Upload } from "lucide-react";
+import { Check, Pencil, Plus, RefreshCw, Star, Trash2, Upload, X } from "lucide-react";
 import {
   DEFAULT_THRESHOLDS,
   calculatePortfolioObservation,
@@ -396,7 +396,14 @@ export const App = () => {
       </aside>
 
       <section className="workspace">
-        {message ? <div className="notice">{message}</div> : null}
+        {message ? (
+          <div className="notice">
+            <span>{message}</span>
+            <button type="button" aria-label="关闭提示" onClick={() => setMessage("")}>
+              <X size={14} />
+            </button>
+          </div>
+        ) : null}
 
         {activeTab === "observe" ? (
           <ObservePanel

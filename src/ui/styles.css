@@ -168,6 +168,32 @@ h1 {
   font-size: 13px;
 }
 
+.notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.notice span {
+  min-width: 0;
+}
+
+.notice button {
+  display: grid;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  color: #6a5518;
+  background: transparent;
+  border-radius: 5px;
+}
+
+.notice button:hover {
+  background: rgba(79, 59, 11, 0.1);
+}
+
 .panel {
   display: flex;
   flex-direction: column;
@@ -324,15 +350,26 @@ h1 {
 
 .drift-view {
   display: grid;
-  grid-template-columns: minmax(250px, 0.82fr) minmax(0, 1.18fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+  align-items: stretch;
 }
 
 .overview-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.65fr) minmax(250px, 0.85fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   align-items: stretch;
+}
+
+.overview-grid,
+.drift-view {
+  min-height: 286px;
+}
+
+.overview-grid > .visual-card,
+.drift-view > .visual-card {
+  height: 100%;
 }
 
 .visual-card .section-head h3 {
@@ -472,13 +509,15 @@ h1 {
 .diagnosis-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 0;
 }
 
 .status-mix {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  margin-top: 8px;
+  margin-bottom: 12px;
 }
 
 .status-mix-bar {
@@ -530,8 +569,9 @@ h1 {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 8px;
-  align-items: start;
-  padding-top: 8px;
+  align-items: center;
+  min-height: 43px;
+  padding: 10px 0;
   border-top: 1px solid #eeeae1;
 }
 
@@ -539,18 +579,19 @@ h1 {
   color: #766f63;
   font-size: 12px;
   font-weight: 800;
-  line-height: 24px;
+  line-height: 20px;
 }
 
 .attention-list > strong {
   color: #6f695f;
   font-size: 12px;
-  line-height: 24px;
+  line-height: 20px;
 }
 
 .attention-list div {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   min-width: 0;
   gap: 5px;
 }
@@ -559,12 +600,13 @@ h1 {
   display: inline-block;
   max-width: 132px;
   overflow: hidden;
-  padding: 4px 7px;
+  height: 22px;
+  padding: 0 7px;
   border-radius: 999px;
   font-size: 11px;
   font-style: normal;
   font-weight: 800;
-  line-height: 1.25;
+  line-height: 22px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -587,7 +629,7 @@ h1 {
 
 .diagnosis-list {
   display: grid;
-  gap: 8px;
+  gap: 0;
 }
 
 .diagnosis-item {
@@ -595,8 +637,8 @@ h1 {
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
-  min-height: 30px;
-  padding-top: 8px;
+  min-height: 43px;
+  padding: 10px 0;
   border-top: 1px solid #eeeae1;
   font-size: 12px;
 }
