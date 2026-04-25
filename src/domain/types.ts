@@ -18,6 +18,7 @@ export interface PortfolioConfig {
   name: string;
   totalAmount: number;
   startDate: string;
+  benchmarkCodes: string[];
   thresholds: RebalanceThresholds;
   holdings: HoldingConfig[];
   createdAt: number;
@@ -65,6 +66,16 @@ export interface PortfolioObservation {
   portfolioDriftPercent: number;
   rebalanceStatus: RebalanceStatus;
   holdings: HoldingObservation[];
+}
+
+export interface BenchmarkReturn {
+  code: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  startClose: number;
+  endClose: number;
+  returnRate: number;
 }
 
 export interface AppState {

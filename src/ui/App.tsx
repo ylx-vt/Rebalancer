@@ -8,11 +8,19 @@ import {
 import { parseFundImport } from "../domain/importers";
 import type {
   AppState,
+  BenchmarkReturn,
   FundSnapshot,
   HoldingConfig,
   PortfolioConfig,
   PortfolioObservation
 } from "../domain/types";
+import {
+  BENCHMARK_CANDIDATES,
+  DEFAULT_BENCHMARK_CODES,
+  MAX_BENCHMARK_SELECTION,
+  normalizeBenchmarkCodes
+} from "../services/benchmarkApi";
+import { loadBenchmarkReturns } from "../services/benchmarkClient";
 import { getCachedSnapshot, loadQuotesForConfig } from "../services/fundClient";
 import { createInitialState, loadState, saveState } from "../services/storage";
 
@@ -23,6 +31,7 @@ const createEmptyConfig = (): PortfolioConfig => ({
   name: "",
   totalAmount: 100000,
   startDate: today(),
+  benchmarkCodes: DEFAULT_BENCHMARK_CODES,
   thresholds: DEFAULT_THRESHOLDS,
   holdings: [],
   createdAt: Date.now(),
@@ -54,6 +63,7 @@ export const App = () => {
   const [loaded, setLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState<"observe" | "edit">("edit");
   const [observation, setObservation] = useState<PortfolioObservation | null>(null);
+  const [benchmarks, setBenchmarks] = useState<BenchmarkReturn[]>([]);
   const [loadingQuotes, setLoadingQuotes] = useState(false);
   const [loadingNameIds, setLoadingNameIds] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState("");
@@ -91,6 +101,7 @@ export const App = () => {
   useEffect(() => {
     if (!selectedConfig) {
       setObservation(null);
+      setBenchmarks([]);
       return;
     }
     setForm(structuredClone(selectedConfig));
@@ -108,10 +119,22 @@ export const App = () => {
 
     setLoadingQuotes(true);
     setMessage(forceRefresh ? "正在刷新净值" : "");
-    const result = await loadQuotesForConfig(config, state, forceRefresh);
+    const [quoteResult, benchmarkResult] = await Promise.allSettled([
+      loadQuotesForConfig(config, state, forceRefresh),
+      loadBenchmarkReturns(config.startDate, normalizeBenchmarkCodes(config.benchmarkCodes))
+    ]);
+
+    if (quoteResult.status === "rejected") {
+      setLoadingQuotes(false);
+      setMessage(readError(quoteResult.reason));
+      return;
+    }
+
+    const result = quoteResult.value;
     const nextObservation = calculatePortfolioObservation(config, result.quotes);
 
     setObservation(nextObservation);
+    setBenchmarks(benchmarkResult.status === "fulfilled" ? benchmarkResult.value : []);
     patchState((current) => ({
       ...current,
       fundCache: { ...current.fundCache, ...result.fundCachePatch },
@@ -178,6 +201,7 @@ export const App = () => {
         ),
         relativePercent: Number(form.thresholds?.relativePercent || DEFAULT_THRESHOLDS.relativePercent)
       },
+      benchmarkCodes: normalizeBenchmarkCodes(form.benchmarkCodes),
       holdings,
       updatedAt: Date.now()
     };
@@ -409,6 +433,7 @@ export const App = () => {
           <ObservePanel
             config={selectedConfig}
             observation={observation}
+            benchmarks={benchmarks}
             loading={loadingQuotes}
             isPrimary={selectedConfig?.id === state.primaryConfigId}
             onRefresh={() => void refreshObservation(selectedConfig, true)}
@@ -452,6 +477,7 @@ export const App = () => {
 interface ObservePanelProps {
   config?: PortfolioConfig;
   observation: PortfolioObservation | null;
+  benchmarks: BenchmarkReturn[];
   loading: boolean;
   isPrimary: boolean;
   onRefresh: () => void;
@@ -463,6 +489,7 @@ interface ObservePanelProps {
 const ObservePanel = ({
   config,
   observation,
+  benchmarks,
   loading,
   isPrimary,
   onRefresh,
@@ -520,7 +547,7 @@ const ObservePanel = ({
   }
 
   return (
-    <div className="panel">
+    <div className={`panel observe-panel observe-panel-${view}`}>
       <div className="panel-title">
         <div>
           <h2>{config.name}</h2>
@@ -560,6 +587,8 @@ const ObservePanel = ({
         />
       </div>
 
+      <BenchmarkStrip benchmarks={benchmarks} portfolioRate={observation?.profitRate ?? 0} loading={loading} />
+
       <div className="observe-switch" role="tablist" aria-label="观测视图">
         <button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}>
           概览
@@ -572,23 +601,25 @@ const ObservePanel = ({
         </button>
       </div>
 
-      {view === "overview" ? <OverviewPanel holdings={holdings} /> : null}
+      <div className="observe-content">
+        {view === "overview" ? <OverviewPanel holdings={holdings} /> : null}
 
-      {view === "drift" ? (
-        <div className="drift-view">
-          <ActionSummary items={actionItems} />
-          <DriftRanking items={driftItems} maxAbsDrift={maxAbsDrift} />
-        </div>
-      ) : null}
+        {view === "drift" ? (
+          <div className="drift-view">
+            <ActionSummary items={actionItems} />
+            <DriftRanking items={driftItems} maxAbsDrift={maxAbsDrift} />
+          </div>
+        ) : null}
 
-      {view === "detail" ? (
-        <HoldingDetailTable
-          sortedHoldings={sortedHoldings}
-          sortKey={sortKey}
-          sortDirection={sortDirection}
-          onSort={changeSort}
-        />
-      ) : null}
+        {view === "detail" ? (
+          <HoldingDetailTable
+            sortedHoldings={sortedHoldings}
+            sortKey={sortKey}
+            sortDirection={sortDirection}
+            onSort={changeSort}
+          />
+        ) : null}
+      </div>
     </div>
   );
 };
@@ -694,6 +725,38 @@ const EditPanel = ({
             }
           />
         </label>
+      </div>
+    </section>
+
+    <section className="benchmark-config-box">
+      <div className="section-head">
+        <h3>同期基准</h3>
+        <span>{normalizeBenchmarkCodes(form.benchmarkCodes).length}/{MAX_BENCHMARK_SELECTION}</span>
+      </div>
+      <div className="benchmark-options">
+        {BENCHMARK_CANDIDATES.map((benchmark) => {
+          const selectedCodes = normalizeBenchmarkCodes(form.benchmarkCodes);
+          const selectedIndex = selectedCodes.indexOf(benchmark.code);
+          const selected = selectedIndex >= 0;
+          const disabled = !selected && selectedCodes.length >= MAX_BENCHMARK_SELECTION;
+          return (
+            <label className={selected ? "selected" : ""} key={benchmark.code}>
+              <input
+                type="checkbox"
+                checked={selected}
+                disabled={disabled}
+                onChange={() => {
+                  const nextCodes = selected
+                    ? selectedCodes.filter((code) => code !== benchmark.code)
+                    : [...selectedCodes, benchmark.code];
+                  onChange({ ...form, benchmarkCodes: normalizeBenchmarkCodes(nextCodes) });
+                }}
+              />
+              {selected ? <em>{selectedIndex + 1}</em> : null}
+              <span>{benchmark.name}</span>
+            </label>
+          );
+        })}
       </div>
     </section>
 
@@ -844,6 +907,39 @@ const InlineDriftGauge = ({
   return <i className={`inline-drift-gauge ${status}`} style={style} />;
 };
 
+const BenchmarkStrip = ({
+  benchmarks,
+  portfolioRate,
+  loading
+}: {
+  benchmarks: BenchmarkReturn[];
+  portfolioRate: number;
+  loading: boolean;
+}) => (
+  <section className="benchmark-strip">
+    <span>同期基准</span>
+    <div>
+      {benchmarks.length > 0 ? (
+        benchmarks.map((item, index) => {
+          const diff = portfolioRate - item.returnRate;
+          return (
+            <article key={item.code} title={`${item.startDate} 至 ${item.endDate}`}>
+              <strong>
+                <span>{index + 1}</span>
+                {item.name}
+              </strong>
+              <em className={toneClass(item.returnRate)}>{formatPercent(item.returnRate)}</em>
+              <small className={toneClass(diff)}>组合 {diff >= 0 ? "领先" : "落后"} {formatPercent(Math.abs(diff))}</small>
+            </article>
+          );
+        })
+      ) : (
+        <p>{loading ? "基准加载中" : "暂无基准数据"}</p>
+      )}
+    </div>
+  </section>
+);
+
 const OverviewPanel = ({ holdings }: { holdings: PortfolioObservation["holdings"] }) => {
   const validHoldings = holdings.filter((item) => !item.error);
   const statusCounts = {
@@ -912,7 +1008,14 @@ const AllocationStack = ({
   <div className="allocation-stack-row">
     <span>{mode === "target" ? "目标" : "当前"}</span>
     <div className="allocation-stack">
-      {holdings.map((item, index) => {
+      {[...holdings]
+        .map((item, index) => ({ item, index }))
+        .sort((left, right) => {
+          const leftValue = mode === "target" ? left.item.targetPercent : left.item.currentPercent;
+          const rightValue = mode === "target" ? right.item.targetPercent : right.item.currentPercent;
+          return rightValue - leftValue;
+        })
+        .map(({ item, index }) => {
         const value = mode === "target" ? item.targetPercent : item.currentPercent;
         return (
           <i

@@ -1,5 +1,6 @@
 import type { AppState } from "../domain/types";
 import { DEFAULT_THRESHOLDS } from "../domain/calculation";
+import { normalizeBenchmarkCodes } from "./benchmarkApi";
 
 const STORAGE_KEY = "rebalancer:v1";
 
@@ -43,6 +44,7 @@ const normalizeState = (value: unknown): AppState => {
     configs: Array.isArray(state.configs)
       ? state.configs.map((config) => ({
           ...config,
+          benchmarkCodes: normalizeBenchmarkCodes(config.benchmarkCodes),
           thresholds: {
             absolutePercentPoints:
               config.thresholds?.absolutePercentPoints ?? DEFAULT_THRESHOLDS.absolutePercentPoints,
