@@ -1,0 +1,1 @@
+import{f as e,c as o}from"./assets/fundApi-CxMzF0_T.js";chrome.runtime.onMessage.addListener((r,a,t)=>((async()=>{if(r.type==="fund:snapshot")return e(r.code);if(r.type==="fund:historical")return o(r.code,r.date);throw new Error("未知请求")})().then(n=>t({ok:!0,data:n})).catch(n=>t({ok:!1,error:n instanceof Error?n.message:"请求失败"})),!0));
