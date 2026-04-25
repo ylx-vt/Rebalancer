@@ -1,3 +1,5 @@
+import type { BacktestInput, HistoricalSeriesCacheItem } from "./backtestTypes";
+
 export type HoldingKind = "fund" | "cash";
 
 export interface HoldingConfig {
@@ -85,6 +87,8 @@ export interface AppState {
   selectedConfigId?: string;
   fundCache: Record<string, FundSnapshot>;
   historicalCache: Record<string, HistoricalNav>;
+  historicalSeriesCache?: Record<string, HistoricalSeriesCacheItem>;
+  lastBacktestInput?: BacktestInput;
 }
 
 export interface ImportParser {

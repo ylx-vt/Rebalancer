@@ -88,5 +88,6 @@ npm run build
 
 ## 文档
 
-- [产品需求文档](docs/PRD.md)
-- [开发设计文档](docs/development-design.md)
+- [文档索引](docs/文档索引.md)
+- [基础功能需求文档](docs/需求文档/基础功能需求文档.md)
+- [开发设计文档](docs/开发设计/开发设计文档.md)

@@ -1,9 +1,10 @@
-import { fetchFundSnapshot, fetchHistoricalNavBeforeOrOn } from "./services/fundApi";
+import { fetchFundSnapshot, fetchHistoricalNavBeforeOrOn, fetchHistoricalNavSeries } from "./services/fundApi";
 import { fetchBenchmarkReturns } from "./services/benchmarkApi";
 
 type RuntimeRequest =
   | { type: "fund:snapshot"; code: string }
   | { type: "fund:historical"; code: string; date: string }
+  | { type: "fund:historical-series"; code: string; startDate: string; endDate: string }
   | { type: "benchmark:returns"; startDate: string; benchmarkCodes: string[] };
 
 chrome.runtime.onMessage.addListener((request: RuntimeRequest, _sender, sendResponse) => {
@@ -13,6 +14,9 @@ chrome.runtime.onMessage.addListener((request: RuntimeRequest, _sender, sendResp
     }
     if (request.type === "fund:historical") {
       return fetchHistoricalNavBeforeOrOn(request.code, request.date);
+    }
+    if (request.type === "fund:historical-series") {
+      return fetchHistoricalNavSeries(request.code, request.startDate, request.endDate);
     }
     if (request.type === "benchmark:returns") {
       return fetchBenchmarkReturns(request.startDate, request.benchmarkCodes);

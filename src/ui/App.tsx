@@ -1,5 +1,5 @@
 import { ChangeEvent, CSSProperties, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Copy, LoaderCircle, Pencil, Plus, RefreshCw, Star, Trash2, Upload } from "lucide-react";
+import { Check, Copy, LoaderCircle, Pencil, Play, Plus, RefreshCw, Star, Trash2, Upload } from "lucide-react";
 import {
   DEFAULT_THRESHOLDS,
   calculatePortfolioObservation,
@@ -23,6 +23,7 @@ import {
 import { loadBenchmarkReturns } from "../services/benchmarkClient";
 import { getCachedSnapshot, loadQuotesForConfig } from "../services/fundClient";
 import { createInitialState, loadState, saveState } from "../services/storage";
+import { BacktestPanel } from "./BacktestPanel";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const uid = () => crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
@@ -82,7 +83,7 @@ export const App = () => {
   const [state, setState] = useState<AppState>(createInitialState);
   const [form, setForm] = useState<PortfolioConfig>(createEmptyConfig);
   const [loaded, setLoaded] = useState(false);
-  const [activeTab, setActiveTab] = useState<"observe" | "edit">("edit");
+  const [activeTab, setActiveTab] = useState<"observe" | "edit" | "backtest">("edit");
   const [observation, setObservation] = useState<PortfolioObservation | null>(null);
   const [benchmarks, setBenchmarks] = useState<BenchmarkReturn[]>([]);
   const [loadingQuotes, setLoadingQuotes] = useState(false);
@@ -585,6 +586,14 @@ export const App = () => {
             onPrimary={() => selectedConfig && setPrimary(selectedConfig.id)}
             onDuplicate={() => selectedConfig && duplicateConfig(selectedConfig)}
             onDelete={() => selectedConfig && deleteConfig(selectedConfig.id)}
+            onBacktest={() => setActiveTab("backtest")}
+          />
+        ) : activeTab === "backtest" ? (
+          <BacktestPanel
+            config={selectedConfig}
+            state={state}
+            onStatePatch={patchState}
+            onBack={() => setActiveTab("observe")}
           />
         ) : (
           <EditPanel
@@ -641,6 +650,7 @@ interface ObservePanelProps {
   onPrimary: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  onBacktest: () => void;
 }
 
 const ObservePanel = ({
@@ -658,7 +668,8 @@ const ObservePanel = ({
   onEdit,
   onPrimary,
   onDuplicate,
-  onDelete
+  onDelete,
+  onBacktest
 }: ObservePanelProps) => {
   const [sortKey, setSortKey] = useState<SortKey>("target");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -757,6 +768,9 @@ const ObservePanel = ({
           </button>
           <button title="编辑" onClick={onEdit}>
             <Pencil size={16} />
+          </button>
+          <button title="规则回测" onClick={onBacktest}>
+            <Play size={16} />
           </button>
           <button
             title={duplicateFeedback === "success" ? "已复制" : "复制配置"}

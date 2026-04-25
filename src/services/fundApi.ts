@@ -1,4 +1,5 @@
 import type { FundSnapshot, HistoricalNav } from "../domain/types";
+import type { NavPoint } from "../domain/backtestTypes";
 import { logDebug, logError, logInfo, logWarn } from "./logger";
 
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -84,6 +85,24 @@ export const fetchHistoricalNavBeforeOrOn = async (
       error: readError(error)
     });
     return fetchHistoricalNavFromHtmlApi(code, date);
+  }
+};
+
+export const fetchHistoricalNavSeries = async (
+  code: string,
+  startDate: string,
+  endDate: string
+): Promise<NavPoint[]> => {
+  try {
+    return await fetchHistoricalNavSeriesFromJsonApi(code, startDate, endDate);
+  } catch (error) {
+    logWarn(LOG_SCOPE, "historical series primary:failed, fallback:start", {
+      code,
+      startDate,
+      endDate,
+      error: readError(error)
+    });
+    return fetchHistoricalNavSeriesFromHtmlApi(code, startDate, endDate);
   }
 };
 
@@ -180,6 +199,65 @@ const fetchHistoricalNavFromJsonApi = async (code: string, date: string): Promis
   throw new Error("未找到起始日之前的历史净值");
 };
 
+const fetchHistoricalNavSeriesFromJsonApi = async (
+  code: string,
+  startDate: string,
+  endDate: string
+): Promise<NavPoint[]> => {
+  const rows: NavPoint[] = [];
+
+  for (let pageIndex = 1; pageIndex <= MAX_HISTORY_PAGES; pageIndex += 1) {
+    const url = new URL("https://api.fund.eastmoney.com/f10/lsjz");
+    url.searchParams.set("fundCode", code);
+    url.searchParams.set("pageIndex", String(pageIndex));
+    url.searchParams.set("pageSize", "120");
+
+    logInfo(LOG_SCOPE, "historical series primary request:start", { code, startDate, endDate, pageIndex });
+    const response = await withTimeout(url.toString(), {
+      referrer: "https://fund.eastmoney.com/",
+      referrerPolicy: "strict-origin-when-cross-origin"
+    });
+    if (!response.ok) {
+      throw new Error(`历史净值序列请求失败：${response.status}`);
+    }
+
+    const text = await response.text();
+    let raw: {
+      ErrCode?: number;
+      Data?: { LSJZList?: Array<Record<string, unknown>> };
+      ErrMsg?: string;
+      PageSize?: number;
+      TotalCount?: number;
+    };
+    try {
+      raw = JSON.parse(text) as typeof raw;
+    } catch {
+      throw new Error("历史净值序列 JSON 解析失败");
+    }
+
+    if (raw.ErrCode !== 0 || !Array.isArray(raw.Data?.LSJZList)) {
+      throw new Error(`历史净值序列返回格式异常（ErrCode: ${raw.ErrCode ?? "unknown"}）`);
+    }
+
+    raw.Data.LSJZList.forEach((item) => {
+      const date = readString(item.FSRQ);
+      const nav = readNumber(item.DWJZ);
+      if (date >= startDate && date <= endDate && Number.isFinite(nav)) {
+        rows.push({ date, nav });
+      }
+    });
+
+    const oldestDate = readString(raw.Data.LSJZList.at(-1)?.FSRQ);
+    const pageSize = raw.PageSize || 120;
+    const totalPages = raw.TotalCount ? Math.ceil(raw.TotalCount / pageSize) : pageIndex;
+    if (!oldestDate || oldestDate < startDate || pageIndex >= totalPages || raw.Data.LSJZList.length === 0) {
+      break;
+    }
+  }
+
+  return normalizeSeriesRows(code, startDate, endDate, rows);
+};
+
 const fetchHistoricalNavFromHtmlApi = async (code: string, date: string): Promise<HistoricalNav> => {
   const targetTime = new Date(`${date}T23:59:59`).getTime();
   let lastSeenDate = "";
@@ -235,6 +313,57 @@ const fetchHistoricalNavFromHtmlApi = async (code: string, date: string): Promis
 
   logWarn(LOG_SCOPE, "historical fallback parse:no-row-before-date", { code, date, lastSeenDate });
   throw new Error("未找到起始日之前的历史净值");
+};
+
+const fetchHistoricalNavSeriesFromHtmlApi = async (
+  code: string,
+  startDate: string,
+  endDate: string
+): Promise<NavPoint[]> => {
+  const rows: NavPoint[] = [];
+
+  for (let page = 1; page <= MAX_HISTORY_PAGES; page += 1) {
+    const url = new URL("https://fundf10.eastmoney.com/F10DataApi.aspx");
+    url.searchParams.set("type", "lsjz");
+    url.searchParams.set("code", code);
+    url.searchParams.set("page", String(page));
+    url.searchParams.set("per", "20");
+    url.searchParams.set("sdate", "");
+    url.searchParams.set("edate", "");
+    url.searchParams.set("rt", String(Math.random()));
+
+    logInfo(LOG_SCOPE, "historical series fallback request:start", { code, startDate, endDate, page });
+    const response = await withTimeout(url.toString());
+    if (!response.ok) {
+      throw new Error(`历史净值序列备用请求失败：${response.status}`);
+    }
+
+    const text = await response.text();
+    const pageRows = extractHistoricalRowsFromHtmlApi(text);
+    pageRows.forEach((item) => {
+      if (item.navDate >= startDate && item.navDate <= endDate) {
+        rows.push({ date: item.navDate, nav: item.nav });
+      }
+    });
+
+    const oldestDate = pageRows.at(-1)?.navDate;
+    const totalPages = readHtmlApiPageCount(text);
+    if (!oldestDate || oldestDate < startDate || page >= totalPages || pageRows.length === 0) {
+      break;
+    }
+  }
+
+  return normalizeSeriesRows(code, startDate, endDate, rows);
+};
+
+const normalizeSeriesRows = (code: string, startDate: string, endDate: string, rows: NavPoint[]) => {
+  const uniqueRows = Array.from(new Map(rows.map((item) => [item.date, item])).values()).sort((left, right) =>
+    left.date.localeCompare(right.date)
+  );
+  if (uniqueRows.length < 2) {
+    throw new Error(`基金 ${code} 在 ${startDate} 至 ${endDate} 内历史净值不足 2 条`);
+  }
+  return uniqueRows;
 };
 
 const extractHistoricalRowsFromHtmlApi = (text: string): Array<{ navDate: string; nav: number }> => {

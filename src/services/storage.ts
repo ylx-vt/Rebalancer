@@ -55,6 +55,8 @@ const normalizeState = (value: unknown): AppState => {
     primaryConfigId: state.primaryConfigId,
     selectedConfigId: state.selectedConfigId,
     fundCache: state.fundCache ?? {},
-    historicalCache: state.historicalCache ?? {}
+    historicalCache: state.historicalCache ?? {},
+    historicalSeriesCache: state.historicalSeriesCache ?? {},
+    lastBacktestInput: state.lastBacktestInput
   };
 };

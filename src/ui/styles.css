@@ -1447,6 +1447,290 @@ section {
   min-width: 132px;
 }
 
+.backtest-panel {
+  padding-bottom: 24px;
+}
+
+.backtest-form-card,
+.backtest-result,
+.backtest-table-card,
+.backtest-chart-card,
+.backtest-records,
+.backtest-loading {
+  padding: 12px;
+  background: #ffffff;
+  border: 1px solid #dedbd1;
+  border-radius: 8px;
+}
+
+.backtest-advanced {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: end;
+}
+
+.toggle-row {
+  flex-direction: row;
+  align-items: center;
+  height: 34px;
+  padding-top: 20px;
+}
+
+.toggle-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: #d99b1d;
+}
+
+.backtest-rules .section-head span {
+  color: #7a746a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.backtest-rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.backtest-rule-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: #faf8f2;
+  border: 1px solid #eee9dd;
+  border-radius: 8px;
+}
+
+.backtest-rule-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px 30px;
+  gap: 6px;
+  align-items: center;
+}
+
+.backtest-rule-head button {
+  display: grid;
+  height: 30px;
+  place-items: center;
+  color: #4f4b44;
+  background: #ffffff;
+  border: 1px solid #ddd9cf;
+  border-radius: 7px;
+}
+
+.backtest-rule-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.backtest-run-button {
+  align-self: flex-end;
+}
+
+.backtest-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #5f5a51;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.backtest-result {
+  gap: 10px;
+}
+
+.backtest-result-head {
+  display: grid;
+  gap: 7px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eeeae1;
+}
+
+.backtest-result-head div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  color: #5f5a51;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.backtest-result-head strong {
+  color: #36322c;
+}
+
+.backtest-result-head p {
+  color: #8a6650;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.backtest-tabs {
+  width: 230px;
+}
+
+.backtest-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.backtest-table-card {
+  padding: 10px;
+}
+
+.backtest-table-card h3 {
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.backtest-table {
+  overflow-x: auto;
+}
+
+.backtest-table-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.1fr) repeat(4, minmax(82px, 1fr));
+  gap: 8px;
+  align-items: center;
+  min-width: 560px;
+  padding: 7px 0;
+  border-top: 1px solid #eeeae1;
+  font-size: 12px;
+}
+
+.backtest-table-row.head {
+  padding-top: 0;
+  color: #6d685f;
+  border-top: 0;
+  font-weight: 800;
+}
+
+.backtest-table-row strong {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+  overflow: hidden;
+  color: #36322c;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backtest-table-row i,
+.chart-legend i {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+.chart-toolbar {
+  display: flex;
+  justify-content: space-between;
+}
+
+.chart-toolbar .observe-switch {
+  width: 210px;
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.backtest-line-chart {
+  width: 100%;
+  height: 238px;
+  margin-top: 8px;
+  overflow: visible;
+  background: #faf8f2;
+  border: 1px solid #eee9dd;
+  border-radius: 7px;
+}
+
+.backtest-line-chart line {
+  stroke: #d6d1c5;
+  stroke-width: 1;
+}
+
+.backtest-line-chart text {
+  fill: #766f63;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.chart-legend button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  color: #4f4b44;
+  background: #ffffff;
+  border: 1px solid #ddd9cf;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.chart-legend button.muted {
+  opacity: 0.45;
+}
+
+.backtest-records label {
+  max-width: 260px;
+}
+
+.backtest-record {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  background: #faf8f2;
+  border: 1px solid #eee9dd;
+  border-radius: 8px;
+}
+
+.backtest-record header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #36322c;
+  font-size: 13px;
+}
+
+.backtest-record header span,
+.backtest-record p {
+  color: #6d685f;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.backtest-record div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.backtest-record div span {
+  padding: 3px 6px;
+  background: #ffffff;
+  border: 1px solid #e8e2d7;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .blank-state {
   display: grid;
   min-height: 360px;
