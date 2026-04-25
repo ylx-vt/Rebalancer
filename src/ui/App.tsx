@@ -1,5 +1,5 @@
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
-import { Check, Plus, RefreshCw, Save, Star, Trash2, Upload } from "lucide-react";
+import { ChangeEvent, CSSProperties, useEffect, useMemo, useState } from "react";
+import { Check, Pencil, Plus, RefreshCw, Star, Trash2, Upload } from "lucide-react";
 import {
   DEFAULT_THRESHOLDS,
   calculatePortfolioObservation,
@@ -46,6 +46,7 @@ const createCashHolding = (): HoldingConfig => ({
 
 type SortKey = "holding" | "target" | "current" | "drift" | "rebalance";
 type SortDirection = "asc" | "desc";
+type ObserveView = "overview" | "drift" | "detail";
 
 export const App = () => {
   const [state, setState] = useState<AppState>(createInitialState);
@@ -395,15 +396,6 @@ export const App = () => {
       </aside>
 
       <section className="workspace">
-        <nav className="tabs">
-          <button className={activeTab === "observe" ? "active" : ""} onClick={() => setActiveTab("observe")}>
-            观测
-          </button>
-          <button className={activeTab === "edit" ? "active" : ""} onClick={() => setActiveTab("edit")}>
-            录入
-          </button>
-        </nav>
-
         {message ? <div className="notice">{message}</div> : null}
 
         {activeTab === "observe" ? (
@@ -473,9 +465,11 @@ const ObservePanel = ({
 }: ObservePanelProps) => {
   const [sortKey, setSortKey] = useState<SortKey>("target");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [view, setView] = useState<ObserveView>("overview");
+  const holdings = observation?.holdings ?? [];
   const sortedHoldings = useMemo(() => {
-    const holdings = [...(observation?.holdings ?? [])];
-    return holdings.sort((left, right) => {
+    const nextHoldings = [...holdings];
+    return nextHoldings.sort((left, right) => {
       const delta = getSortValue(left, sortKey).localeCompare(getSortValue(right, sortKey), "zh-CN", {
         numeric: true
       });
@@ -483,7 +477,22 @@ const ObservePanel = ({
       const result = sortKey === "holding" ? delta : numericDelta;
       return sortDirection === "asc" ? result : -result;
     });
-  }, [observation?.holdings, sortDirection, sortKey]);
+  }, [holdings, sortDirection, sortKey]);
+  const actionItems = useMemo(
+    () =>
+      holdings
+        .filter((item) => !item.error && Math.abs(item.rebalanceAmount) > 0.005)
+        .sort((left, right) => Math.abs(right.rebalanceAmount) - Math.abs(left.rebalanceAmount)),
+    [holdings]
+  );
+  const driftItems = useMemo(
+    () =>
+      [...holdings]
+        .filter((item) => !item.error)
+        .sort((left, right) => Math.abs(right.driftPercentPoints) - Math.abs(left.driftPercentPoints)),
+    [holdings]
+  );
+  const maxAbsDrift = Math.max(5, ...driftItems.map((item) => Math.abs(item.driftPercentPoints)));
 
   const changeSort = (nextKey: SortKey) => {
     if (nextKey === sortKey) {
@@ -518,7 +527,7 @@ const ObservePanel = ({
             <Star size={16} fill={isPrimary ? "currentColor" : "none"} />
           </button>
           <button title="编辑" onClick={onEdit}>
-            <Save size={16} />
+            <Pencil size={16} />
           </button>
           <button title="删除" onClick={onDelete}>
             <Trash2 size={16} />
@@ -539,39 +548,40 @@ const ObservePanel = ({
           value={observation ? `${observation.portfolioDriftPercent.toFixed(2)}%` : "0.00%"}
           status={observation?.rebalanceStatus}
           detail="组合偏离 = 调回目标所需买卖金额的一半 / 组合总市值"
+          gaugeValue={observation?.portfolioDriftPercent ?? 0}
+          gaugeStatus={observation?.rebalanceStatus ?? "ok"}
         />
       </div>
 
-      <div className="holding-table">
-        <div className="row head">
-          <SortHeader label="持仓" sortKey="holding" activeKey={sortKey} direction={sortDirection} onSort={changeSort} />
-          <SortHeader label="目标" sortKey="target" activeKey={sortKey} direction={sortDirection} onSort={changeSort} />
-          <SortHeader label="当前" sortKey="current" activeKey={sortKey} direction={sortDirection} onSort={changeSort} />
-          <SortHeader label="偏离" sortKey="drift" activeKey={sortKey} direction={sortDirection} onSort={changeSort} />
-          <SortHeader label="建议" sortKey="rebalance" activeKey={sortKey} direction={sortDirection} onSort={changeSort} />
-        </div>
-        {sortedHoldings.map((item) => (
-          <div className="row" key={item.holding.id}>
-            <span>
-              <span className="holding-name-line">
-                <StatusDot status={item.rebalanceStatus} detail={getStatusDetail(item)} />
-                <strong>{item.holding.name}</strong>
-              </span>
-              <small>{item.holding.code ?? item.navDate ?? item.error}</small>
-              {item.error ? <em>{item.error}</em> : null}
-            </span>
-            <span>{item.targetPercent.toFixed(2)}%</span>
-            <span>{item.currentPercent.toFixed(2)}%</span>
-            <span className={toneClass(item.driftPercentPoints)}>
-              {signed(item.driftPercentPoints)}pp
-              <small>{signed(item.relativeDriftPercent)}%</small>
-            </span>
-            <span className={toneClass(item.rebalanceAmount)}>
-              {item.error ? "待重试" : `${item.rebalanceAmount >= 0 ? "买入 " : "卖出 "}${formatMoney(Math.abs(item.rebalanceAmount))}`}
-            </span>
-          </div>
-        ))}
+      <div className="observe-switch" role="tablist" aria-label="观测视图">
+        <button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}>
+          概览
+        </button>
+        <button className={view === "drift" ? "active" : ""} onClick={() => setView("drift")}>
+          偏离
+        </button>
+        <button className={view === "detail" ? "active" : ""} onClick={() => setView("detail")}>
+          明细
+        </button>
       </div>
+
+      {view === "overview" ? <OverviewPanel holdings={holdings} /> : null}
+
+      {view === "drift" ? (
+        <div className="drift-view">
+          <ActionSummary items={actionItems} />
+          <DriftRanking items={driftItems} maxAbsDrift={maxAbsDrift} />
+        </div>
+      ) : null}
+
+      {view === "detail" ? (
+        <HoldingDetailTable
+          sortedHoldings={sortedHoldings}
+          sortKey={sortKey}
+          sortDirection={sortDirection}
+          onSort={changeSort}
+        />
+      ) : null}
     </div>
   );
 };
@@ -790,7 +800,9 @@ const Metric = ({
   subValue,
   tone,
   status,
-  detail
+  detail,
+  gaugeValue,
+  gaugeStatus
 }: {
   label: string;
   value: string;
@@ -798,6 +810,8 @@ const Metric = ({
   tone?: "positive" | "negative";
   status?: PortfolioObservation["rebalanceStatus"];
   detail?: string;
+  gaugeValue?: number;
+  gaugeStatus?: PortfolioObservation["rebalanceStatus"];
 }) => (
   <div className="metric">
     <span>
@@ -808,6 +822,317 @@ const Metric = ({
       <strong className={tone}>{value}</strong>
       {subValue ? <em className={tone}>{subValue}</em> : null}
     </div>
+    {gaugeValue !== undefined ? <InlineDriftGauge value={gaugeValue} status={gaugeStatus ?? "ok"} /> : null}
+  </div>
+);
+
+const InlineDriftGauge = ({
+  value,
+  status
+}: {
+  value: number;
+  status: PortfolioObservation["rebalanceStatus"];
+}) => {
+  const style = { "--value": `${Math.min(100, (value / 7.5) * 100)}%` } as CSSProperties;
+  return <i className={`inline-drift-gauge ${status}`} style={style} />;
+};
+
+const OverviewPanel = ({ holdings }: { holdings: PortfolioObservation["holdings"] }) => {
+  const validHoldings = holdings.filter((item) => !item.error);
+  const statusCounts = {
+    ok: validHoldings.filter((item) => item.rebalanceStatus === "ok").length,
+    watch: validHoldings.filter((item) => item.rebalanceStatus === "watch").length,
+    rebalance: validHoldings.filter((item) => item.rebalanceStatus === "rebalance").length,
+    error: holdings.filter((item) => item.rebalanceStatus === "error").length
+  };
+  const overweight = [...validHoldings]
+    .filter((item) => item.driftPercentPoints > 0)
+    .sort((left, right) => right.driftPercentPoints - left.driftPercentPoints)[0];
+  const underweight = [...validHoldings]
+    .filter((item) => item.driftPercentPoints < 0)
+    .sort((left, right) => left.driftPercentPoints - right.driftPercentPoints)[0];
+  const attentionItems = [...holdings]
+    .filter((item) => item.rebalanceStatus !== "ok")
+    .sort((left, right) => statusPriority(right.rebalanceStatus) - statusPriority(left.rebalanceStatus));
+  const diagnosis = getOverviewDiagnosis(statusCounts);
+
+  return (
+    <div className="overview-grid">
+      <AllocationCompare holdings={holdings} />
+      <section className="visual-card diagnosis-card">
+        <div className="section-head">
+          <h3>组合诊断</h3>
+        </div>
+        <StatusMix counts={statusCounts} />
+        <AttentionList items={attentionItems} />
+        <div className="diagnosis-list">
+          <DiagnosisItem label="最大超配" item={overweight} tone="positive" fallback="暂无明显超配" />
+          <DiagnosisItem label="最大低配" item={underweight} tone="negative" fallback="暂无明显低配" />
+        </div>
+        <p className="diagnosis-copy">{diagnosis}</p>
+      </section>
+    </div>
+  );
+};
+
+const AllocationCompare = ({ holdings }: { holdings: PortfolioObservation["holdings"] }) => (
+  <section className="visual-card allocation-card">
+    <div className="section-head">
+      <h3>目标 / 当前占比</h3>
+    </div>
+    <div className="allocation-bars">
+      <AllocationStack holdings={holdings} mode="target" />
+      <AllocationStack holdings={holdings} mode="current" />
+    </div>
+    <div className="allocation-legend">
+      {holdings.map((item, index) => (
+        <span key={item.holding.id}>
+          <i style={{ background: chartColor(index) }} />
+          {item.holding.name}
+        </span>
+      ))}
+    </div>
+  </section>
+);
+
+const AllocationStack = ({
+  holdings,
+  mode
+}: {
+  holdings: PortfolioObservation["holdings"];
+  mode: "target" | "current";
+}) => (
+  <div className="allocation-stack-row">
+    <span>{mode === "target" ? "目标" : "当前"}</span>
+    <div className="allocation-stack">
+      {holdings.map((item, index) => {
+        const value = mode === "target" ? item.targetPercent : item.currentPercent;
+        return (
+          <i
+            key={item.holding.id}
+            tabIndex={0}
+            style={{ width: `${Math.max(value, value > 0 ? 1.5 : 0)}%`, background: chartColor(index) }}
+          >
+            <span>
+              <strong>{item.holding.name}</strong>
+              <em>{mode === "target" ? "目标" : "当前"} {value.toFixed(2)}%</em>
+              {mode === "current" ? <small>{getAllocationTooltipDetail(item)}</small> : null}
+            </span>
+          </i>
+        );
+      })}
+    </div>
+  </div>
+);
+
+const StatusMix = ({
+  counts
+}: {
+  counts: Record<PortfolioObservation["rebalanceStatus"], number>;
+}) => {
+  const total = Math.max(1, counts.ok + counts.watch + counts.rebalance + counts.error);
+
+  return (
+    <div className="status-mix">
+      <div className="status-mix-bar">
+        <i className="ok" style={{ width: `${(counts.ok / total) * 100}%` }} />
+        <i className="watch" style={{ width: `${(counts.watch / total) * 100}%` }} />
+        <i className="rebalance" style={{ width: `${(counts.rebalance / total) * 100}%` }} />
+        <i className="error" style={{ width: `${(counts.error / total) * 100}%` }} />
+      </div>
+      <div className="status-pills">
+        <span>正常 {counts.ok}</span>
+        <span>观察 {counts.watch}</span>
+        <span>再平衡 {counts.rebalance}</span>
+        <span>异常 {counts.error}</span>
+      </div>
+    </div>
+  );
+};
+
+const AttentionList = ({ items }: { items: PortfolioObservation["holdings"] }) => {
+  const visibleItems = items.slice(0, 3);
+  const hiddenCount = Math.max(0, items.length - visibleItems.length);
+
+  return (
+    <div className="attention-list">
+      <span>需关注</span>
+      {visibleItems.length === 0 ? (
+        <strong>暂无</strong>
+      ) : (
+        <div>
+          {visibleItems.map((item) => (
+            <em className={item.rebalanceStatus} key={item.holding.id} title={getStatusDetail(item)}>
+              {item.holding.name}
+            </em>
+          ))}
+          {hiddenCount > 0 ? <em className="more">+{hiddenCount}</em> : null}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const DiagnosisItem = ({
+  label,
+  item,
+  tone,
+  fallback
+}: {
+  label: string;
+  item?: PortfolioObservation["holdings"][number];
+  tone: "positive" | "negative";
+  fallback: string;
+}) => (
+  <div className="diagnosis-item">
+    <span>{label}</span>
+    <strong>{item?.holding.name ?? fallback}</strong>
+    {item ? <em className={tone}>{tone === "positive" ? "超配" : "低配"}</em> : null}
+  </div>
+);
+
+const ActionSummary = ({ items }: { items: PortfolioObservation["holdings"] }) => {
+  const buyItems = items.filter((item) => item.rebalanceAmount > 0);
+  const sellItems = items.filter((item) => item.rebalanceAmount < 0);
+  const buyTotal = buyItems.reduce((sum, item) => sum + item.rebalanceAmount, 0);
+  const sellTotal = sellItems.reduce((sum, item) => sum + Math.abs(item.rebalanceAmount), 0);
+  const turnover = Math.min(buyTotal, sellTotal);
+  const netCash = buyTotal - sellTotal;
+  const leadBuy = buyItems[0];
+  const leadSell = sellItems[0];
+
+  return (
+    <section className="visual-card action-card">
+      <div className="section-head">
+        <h3>资金搬移摘要</h3>
+      </div>
+      <div className="action-summary-grid">
+        <div>
+          <span>卖出释放</span>
+          <strong className="negative">{formatMoney(sellTotal)}</strong>
+        </div>
+        <div>
+          <span>买入补足</span>
+          <strong className="positive">{formatMoney(buyTotal)}</strong>
+        </div>
+      </div>
+      <div className="action-flow">
+        <div className="action-flow-line">
+          <i className="sell" style={{ width: `${getActionWidth(sellTotal, buyTotal)}%` }} />
+          <i className="buy" style={{ width: `${getActionWidth(buyTotal, sellTotal)}%` }} />
+        </div>
+        <div className="action-flow-meta">
+          <span>可对冲换手 {formatMoney(turnover)}</span>
+          <span>{netCash >= 0 ? `另需投入 ${formatMoney(netCash)}` : `净流出 ${formatMoney(Math.abs(netCash))}`}</span>
+        </div>
+      </div>
+      <div className="action-focus">
+        <ActionFocusItem label="最大卖出" item={leadSell} tone="negative" />
+        <ActionFocusItem label="最大买入" item={leadBuy} tone="positive" />
+      </div>
+    </section>
+  );
+};
+
+const ActionFocusItem = ({
+  label,
+  item,
+  tone
+}: {
+  label: string;
+  item?: PortfolioObservation["holdings"][number];
+  tone: "positive" | "negative";
+}) => (
+  <div className="action-focus-item">
+    <span>{label}</span>
+    {item ? (
+      <>
+        <em className={tone}>{formatMoney(Math.abs(item.rebalanceAmount))}</em>
+        <strong>{item.holding.name}</strong>
+      </>
+    ) : (
+      <strong>暂无</strong>
+    )}
+  </div>
+);
+
+const DriftRanking = ({
+  items,
+  maxAbsDrift
+}: {
+  items: PortfolioObservation["holdings"];
+  maxAbsDrift: number;
+}) => (
+  <section className="visual-card drift-ranking">
+    <div className="section-head">
+      <h3>持仓偏离排行</h3>
+    </div>
+    <div className="drift-list">
+      {items.length === 0 ? (
+        <div className="empty-visual">暂无可展示持仓</div>
+      ) : (
+        items.slice(0, 8).map((item) => {
+          const width = Math.min(50, (Math.abs(item.driftPercentPoints) / maxAbsDrift) * 50);
+          const sideClass = item.driftPercentPoints >= 0 ? "over" : "under";
+          return (
+            <div className="drift-row" key={item.holding.id}>
+              <span className="drift-name">
+                <StatusDot status={item.rebalanceStatus} detail={getStatusDetail(item)} />
+                {item.holding.name}
+              </span>
+              <div className="drift-axis">
+                <i className={`drift-bar ${sideClass}`} style={{ width: `${width}%` }} />
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
+  </section>
+);
+
+const HoldingDetailTable = ({
+  sortedHoldings,
+  sortKey,
+  sortDirection,
+  onSort
+}: {
+  sortedHoldings: PortfolioObservation["holdings"];
+  sortKey: SortKey;
+  sortDirection: SortDirection;
+  onSort: (key: SortKey) => void;
+}) => (
+  <div className="holding-table">
+    <div className="row head">
+      <SortHeader label="持仓" sortKey="holding" activeKey={sortKey} direction={sortDirection} onSort={onSort} />
+      <SortHeader label="目标" sortKey="target" activeKey={sortKey} direction={sortDirection} onSort={onSort} />
+      <SortHeader label="当前" sortKey="current" activeKey={sortKey} direction={sortDirection} onSort={onSort} />
+      <SortHeader label="偏离" sortKey="drift" activeKey={sortKey} direction={sortDirection} onSort={onSort} />
+      <SortHeader label="建议" sortKey="rebalance" activeKey={sortKey} direction={sortDirection} onSort={onSort} />
+    </div>
+    {sortedHoldings.map((item) => (
+      <div className="row" key={item.holding.id}>
+        <span>
+          <span className="holding-name-line">
+            <StatusDot status={item.rebalanceStatus} detail={getStatusDetail(item)} />
+            <strong>{item.holding.name}</strong>
+          </span>
+          <small>{item.holding.code ?? item.navDate ?? item.error}</small>
+          {item.error ? <em>{item.error}</em> : null}
+        </span>
+        <span>{item.targetPercent.toFixed(2)}%</span>
+        <span>{item.currentPercent.toFixed(2)}%</span>
+        <span className={toneClass(item.driftPercentPoints)}>
+          {signed(item.driftPercentPoints)}pp
+          <small>{signed(item.relativeDriftPercent)}%</small>
+        </span>
+        <span className={toneClass(item.rebalanceAmount)}>
+          {item.error
+            ? "待重试"
+            : `${item.rebalanceAmount >= 0 ? "买入 " : "卖出 "}${formatMoney(Math.abs(item.rebalanceAmount))}`}
+        </span>
+      </div>
+    ))}
   </div>
 );
 
@@ -871,6 +1196,35 @@ const formatMoney = (value: number) =>
 const formatPercent = (value: number) => `${(value * 100).toFixed(2)}%`;
 const signed = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
 const toneClass = (value: number) => (value > 0 ? "positive" : value < 0 ? "negative" : "neutral");
+const getActionWidth = (value: number, compareValue: number) => {
+  const maxValue = Math.max(value, compareValue, 1);
+  return Math.max(8, (value / maxValue) * 100);
+};
+const getOverviewDiagnosis = (counts: Record<PortfolioObservation["rebalanceStatus"], number>) => {
+  if (counts.error > 0) {
+    return "有持仓数据异常，先刷新或检查代码后再判断组合状态。";
+  }
+  if (counts.rebalance > 0) {
+    return "组合已有明确偏离来源，建议进入偏离页查看调仓方向。";
+  }
+  if (counts.watch > 0) {
+    return "组合整体仍可控，但已有持仓进入观察区间。";
+  }
+  return "组合结构贴近目标，暂时不需要特别动作。";
+};
+const getAllocationTooltipDetail = (item: PortfolioObservation["holdings"][number]) => {
+  if (item.error) {
+    return item.error;
+  }
+  if (Math.abs(item.driftPercentPoints) < 0.005) {
+    return "贴近目标";
+  }
+  return `${item.driftPercentPoints > 0 ? "高于目标" : "低于目标"} ${Math.abs(item.driftPercentPoints).toFixed(2)}pp`;
+};
+const statusPriority = (status: PortfolioObservation["rebalanceStatus"]) =>
+  status === "error" ? 3 : status === "rebalance" ? 2 : status === "watch" ? 1 : 0;
+const chartColor = (index: number) =>
+  ["#365f91", "#c9892b", "#6f8f52", "#9b4d55", "#4f7f7b", "#8b6bb1", "#b75f35", "#6f6a61"][index % 8];
 
 const getStatusDetail = (item: PortfolioObservation["holdings"][number]) => {
   if (item.rebalanceStatus === "error") {
