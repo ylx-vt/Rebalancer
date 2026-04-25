@@ -162,7 +162,6 @@ h1 {
   overflow-y: hidden;
 }
 
-.notice,
 .errors {
   margin-top: 8px;
   padding: 7px 10px;
@@ -171,33 +170,6 @@ h1 {
   border: 1px solid #ead28e;
   border-radius: 8px;
   font-size: 13px;
-}
-
-.notice {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin: 0 0 8px;
-}
-
-.notice span {
-  min-width: 0;
-}
-
-.notice button {
-  display: grid;
-  flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
-  place-items: center;
-  color: #6a5518;
-  background: transparent;
-  border-radius: 5px;
-}
-
-.notice button:hover {
-  background: rgba(79, 59, 11, 0.1);
 }
 
 .panel {
@@ -247,6 +219,32 @@ h1 {
 .icon-actions button.selected {
   color: #8a6900;
   background: #fff2b8;
+}
+
+.action-success,
+.icon-actions button.action-success {
+  color: #0b7a3b;
+  background: #e8f6ec;
+  border-color: #b9dec6;
+}
+
+.panel-feedback {
+  margin-top: -2px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.panel-feedback.error {
+  color: #9d2727;
+  background: #fde9e5;
+  border: 1px solid #efc8c0;
+}
+
+.refresh-success-icon {
+  animation: check-pop 0.18s ease-out;
 }
 
 .metric-grid {
@@ -1422,11 +1420,26 @@ section {
   position: absolute;
   top: 50%;
   right: 8px;
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
   transform: translateY(-50%);
   color: #7b766d;
   background: #ffffff;
   font-size: 11px;
   pointer-events: none;
+}
+
+.name-field .name-success {
+  color: #0b7a3b;
+  animation: check-pop 0.18s ease-out;
+}
+
+.name-field .name-error {
+  color: #9d2727;
+  font-weight: 900;
+  animation: error-shake 0.24s ease-out;
 }
 
 .save-button {
@@ -1450,5 +1463,32 @@ section {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes check-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.78);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes error-shake {
+  0%,
+  100% {
+    transform: translateY(-50%) translateX(0);
+  }
+
+  35% {
+    transform: translateY(-50%) translateX(-2px);
+  }
+
+  70% {
+    transform: translateY(-50%) translateX(2px);
   }
 }

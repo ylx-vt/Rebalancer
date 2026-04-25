@@ -1,5 +1,5 @@
-import { ChangeEvent, CSSProperties, useEffect, useMemo, useState } from "react";
-import { Check, Copy, Pencil, Plus, RefreshCw, Star, Trash2, Upload, X } from "lucide-react";
+import { ChangeEvent, CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { Check, Copy, LoaderCircle, Pencil, Plus, RefreshCw, Star, Trash2, Upload } from "lucide-react";
 import {
   DEFAULT_THRESHOLDS,
   calculatePortfolioObservation,
@@ -75,6 +75,8 @@ const createCashHolding = (): HoldingConfig => ({
 type SortKey = "holding" | "target" | "current" | "drift" | "rebalance";
 type SortDirection = "asc" | "desc";
 type ObserveView = "overview" | "drift" | "detail";
+type RefreshFeedback = "idle" | "refreshing" | "success";
+type ButtonFeedback = "idle" | "busy" | "success" | "error";
 
 export const App = () => {
   const [state, setState] = useState<AppState>(createInitialState);
@@ -85,8 +87,20 @@ export const App = () => {
   const [benchmarks, setBenchmarks] = useState<BenchmarkReturn[]>([]);
   const [loadingQuotes, setLoadingQuotes] = useState(false);
   const [loadingNameIds, setLoadingNameIds] = useState<Set<string>>(new Set());
-  const [message, setMessage] = useState("");
+  const [refreshFeedback, setRefreshFeedback] = useState<RefreshFeedback>("idle");
+  const [refreshError, setRefreshError] = useState("");
+  const [saveFeedback, setSaveFeedback] = useState<ButtonFeedback>("idle");
+  const [saveError, setSaveError] = useState("");
+  const [importFeedback, setImportFeedback] = useState<ButtonFeedback>("idle");
+  const [importError, setImportError] = useState("");
+  const [primaryFeedback, setPrimaryFeedback] = useState<ButtonFeedback>("idle");
+  const [duplicateFeedback, setDuplicateFeedback] = useState<ButtonFeedback>("idle");
+  const [deleteFeedback, setDeleteFeedback] = useState<ButtonFeedback>("idle");
+  const [nameSuccessIds, setNameSuccessIds] = useState<Set<string>>(new Set());
+  const [nameErrorIds, setNameErrorIds] = useState<Set<string>>(new Set());
   const [importText, setImportText] = useState("");
+  const refreshFeedbackTimer = useRef<number | null>(null);
+  const feedbackTimers = useRef<number[]>([]);
 
   const selectedConfig = useMemo(
     () => state.configs.find((config) => config.id === state.selectedConfigId) ?? state.configs[0],
@@ -114,7 +128,7 @@ export const App = () => {
     if (!loaded) {
       return;
     }
-    saveState(state).catch((error) => setMessage(readError(error)));
+    saveState(state).catch((error) => setSaveError(readError(error)));
   }, [loaded, state]);
 
   useEffect(() => {
@@ -127,8 +141,43 @@ export const App = () => {
     void refreshObservation(selectedConfig, false);
   }, [selectedConfig?.id]);
 
+  useEffect(() => {
+    return () => {
+      if (refreshFeedbackTimer.current !== null) {
+        window.clearTimeout(refreshFeedbackTimer.current);
+      }
+      feedbackTimers.current.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, []);
+
   const patchState = (updater: (current: AppState) => AppState) => {
     setState((current) => updater(current));
+  };
+
+  const resetTimedFeedback = (setter: (status: ButtonFeedback) => void, delay = 1200) => {
+    const timer = window.setTimeout(() => {
+      setter("idle");
+      feedbackTimers.current = feedbackTimers.current.filter((item) => item !== timer);
+    }, delay);
+    feedbackTimers.current.push(timer);
+  };
+
+  const markNameStatus = (ids: string[], status: "success" | "error") => {
+    const setter = status === "success" ? setNameSuccessIds : setNameErrorIds;
+    setter((current) => {
+      const next = new Set(current);
+      ids.forEach((id) => next.add(id));
+      return next;
+    });
+    const timer = window.setTimeout(() => {
+      setter((current) => {
+        const next = new Set(current);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
+      feedbackTimers.current = feedbackTimers.current.filter((item) => item !== timer);
+    }, 1400);
+    feedbackTimers.current.push(timer);
   };
 
   const refreshObservation = async (config = selectedConfig, forceRefresh = true) => {
@@ -137,7 +186,14 @@ export const App = () => {
     }
 
     setLoadingQuotes(true);
-    setMessage(forceRefresh ? "正在刷新净值" : "");
+    if (refreshFeedbackTimer.current !== null) {
+      window.clearTimeout(refreshFeedbackTimer.current);
+      refreshFeedbackTimer.current = null;
+    }
+    if (forceRefresh) {
+      setRefreshFeedback("refreshing");
+      setRefreshError("");
+    }
     const [quoteResult, benchmarkResult] = await Promise.allSettled([
       loadQuotesForConfig(config, state, forceRefresh),
       loadBenchmarkReturns(config.startDate, normalizeBenchmarkCodes(config.benchmarkCodes))
@@ -145,7 +201,10 @@ export const App = () => {
 
     if (quoteResult.status === "rejected") {
       setLoadingQuotes(false);
-      setMessage(readError(quoteResult.reason));
+      if (forceRefresh) {
+        setRefreshFeedback("idle");
+      }
+      setRefreshError(readError(quoteResult.reason));
       return;
     }
 
@@ -160,13 +219,23 @@ export const App = () => {
       historicalCache: { ...current.historicalCache, ...result.historicalCachePatch }
     }));
     setLoadingQuotes(false);
-    setMessage(forceRefresh ? "净值已刷新" : "");
+    if (forceRefresh) {
+      setRefreshFeedback("success");
+      refreshFeedbackTimer.current = window.setTimeout(() => {
+        setRefreshFeedback("idle");
+        refreshFeedbackTimer.current = null;
+      }, 1200);
+    }
   };
 
   const saveCurrentConfig = async () => {
+    setSaveFeedback("busy");
+    setSaveError("");
     const errors = validatePortfolioConfig(form);
     if (errors.length > 0) {
-      setMessage(errors[0]);
+      setSaveFeedback("error");
+      setSaveError(errors[0]);
+      resetTimedFeedback(setSaveFeedback);
       return;
     }
 
@@ -238,17 +307,19 @@ export const App = () => {
       };
     });
     setActiveTab("observe");
-    setMessage("配置已保存");
+    setSaveFeedback("success");
+    resetTimedFeedback(setSaveFeedback);
     void refreshObservation(normalized, true);
   };
 
   const selectConfig = (config: PortfolioConfig) => {
     patchState((current) => ({ ...current, selectedConfigId: config.id }));
     setActiveTab("observe");
-    setMessage("");
+    setRefreshError("");
   };
 
   const deleteConfig = (id: string) => {
+    setDeleteFeedback("busy");
     patchState((current) => {
       const configs = current.configs.filter((config) => config.id !== id);
       const selectedConfigId =
@@ -262,7 +333,8 @@ export const App = () => {
     });
     setObservation(null);
     setForm(createEmptyConfig());
-    setMessage("配置已删除");
+    setDeleteFeedback("success");
+    resetTimedFeedback(setDeleteFeedback);
   };
 
   const duplicateConfig = (config: PortfolioConfig) => {
@@ -297,12 +369,14 @@ export const App = () => {
     setForm(structuredClone(duplicate));
     setActiveTab("edit");
     setObservation(null);
-    setMessage("已复制配置副本");
+    setDuplicateFeedback("success");
+    resetTimedFeedback(setDuplicateFeedback);
   };
 
   const setPrimary = (id: string) => {
     patchState((current) => ({ ...current, primaryConfigId: id, selectedConfigId: id }));
-    setMessage("已设为主配置");
+    setPrimaryFeedback("success");
+    resetTimedFeedback(setPrimaryFeedback);
   };
 
   const updateHolding = (id: string, patch: Partial<HoldingConfig>) => {
@@ -343,7 +417,16 @@ export const App = () => {
       fundHoldings.map((holding) => holding.id),
       true
     );
-    setMessage(fundHoldings.length > 1 ? "正在补全基金名称" : "正在查询基金名称");
+    setNameSuccessIds((current) => {
+      const next = new Set(current);
+      fundHoldings.forEach((holding) => next.delete(holding.id));
+      return next;
+    });
+    setNameErrorIds((current) => {
+      const next = new Set(current);
+      fundHoldings.forEach((holding) => next.delete(holding.id));
+      return next;
+    });
 
     const results = await Promise.all(
       fundHoldings.map(async (holding) => {
@@ -391,10 +474,16 @@ export const App = () => {
     );
 
     if (failures.length > 0) {
-      setMessage(`有 ${failures.length} 只基金名称查询失败，可稍后重试`);
+      markNameStatus(
+        failures.map((item) => item.holdingId),
+        "error"
+      );
       return;
     }
-    setMessage(`已补全 ${snapshots.length} 只基金名称`);
+    markNameStatus(
+      snapshots.map((item) => item.holdingId),
+      "success"
+    );
   };
 
   const completeFundName = async (holdingId: string) => {
@@ -406,6 +495,8 @@ export const App = () => {
   };
 
   const importCodes = async (text: string) => {
+    setImportFeedback("busy");
+    setImportError("");
     try {
       const result = parseFundImport(text);
       const existingCodes = new Set(
@@ -415,11 +506,14 @@ export const App = () => {
         .filter((code) => !existingCodes.has(code))
         .map((code) => createFundHolding(code));
       setForm((current) => ({ ...current, holdings: [...current.holdings, ...newHoldings] }));
-      setMessage(`已导入 ${newHoldings.length} 只基金，格式：${result.parserName}`);
+      setImportFeedback("success");
+      resetTimedFeedback(setImportFeedback);
       setImportText("");
       void completeFundNames(newHoldings);
     } catch (error) {
-      setMessage(readError(error));
+      setImportFeedback("error");
+      setImportError(readError(error));
+      resetTimedFeedback(setImportFeedback);
     }
   };
 
@@ -474,22 +568,18 @@ export const App = () => {
       </aside>
 
       <section className="workspace">
-        {message ? (
-          <div className="notice">
-            <span>{message}</span>
-            <button type="button" aria-label="关闭提示" onClick={() => setMessage("")}>
-              <X size={14} />
-            </button>
-          </div>
-        ) : null}
-
         {activeTab === "observe" ? (
           <ObservePanel
             config={selectedConfig}
             observation={observation}
             benchmarks={benchmarks}
             loading={loadingQuotes}
+            refreshFeedback={refreshFeedback}
+            refreshError={refreshError}
             isPrimary={selectedConfig?.id === state.primaryConfigId}
+            primaryFeedback={primaryFeedback}
+            duplicateFeedback={duplicateFeedback}
+            deleteFeedback={deleteFeedback}
             onRefresh={() => void refreshObservation(selectedConfig, true)}
             onEdit={() => setActiveTab("edit")}
             onPrimary={() => selectedConfig && setPrimary(selectedConfig.id)}
@@ -501,6 +591,10 @@ export const App = () => {
             form={form}
             targetSum={targetSum}
             errors={validationErrors}
+            saveFeedback={saveFeedback}
+            saveError={saveError}
+            importFeedback={importFeedback}
+            importError={importError}
             importText={importText}
             setImportText={setImportText}
             onChange={setForm}
@@ -508,6 +602,8 @@ export const App = () => {
             onImport={() => void importCodes(importText)}
             onFileImport={importFile}
             loadingNameIds={loadingNameIds}
+            nameSuccessIds={nameSuccessIds}
+            nameErrorIds={nameErrorIds}
             onAddFund={() =>
               setForm((current) => ({ ...current, holdings: [...current.holdings, createFundHolding()] }))
             }
@@ -534,7 +630,12 @@ interface ObservePanelProps {
   observation: PortfolioObservation | null;
   benchmarks: BenchmarkReturn[];
   loading: boolean;
+  refreshFeedback: RefreshFeedback;
+  refreshError: string;
   isPrimary: boolean;
+  primaryFeedback: ButtonFeedback;
+  duplicateFeedback: ButtonFeedback;
+  deleteFeedback: ButtonFeedback;
   onRefresh: () => void;
   onEdit: () => void;
   onPrimary: () => void;
@@ -547,7 +648,12 @@ const ObservePanel = ({
   observation,
   benchmarks,
   loading,
+  refreshFeedback,
+  refreshError,
   isPrimary,
+  primaryFeedback,
+  duplicateFeedback,
+  deleteFeedback,
   onRefresh,
   onEdit,
   onPrimary,
@@ -584,6 +690,28 @@ const ObservePanel = ({
     [holdings]
   );
   const maxAbsDrift = Math.max(5, ...driftItems.map((item) => Math.abs(item.driftPercentPoints)));
+  const refreshIcon =
+    refreshFeedback === "success" && !loading ? (
+      <Check size={16} className="refresh-success-icon" />
+    ) : (
+      <RefreshCw size={16} className={loading || refreshFeedback === "refreshing" ? "spin" : ""} />
+    );
+  const primaryIcon =
+    primaryFeedback === "success" ? (
+      <Check size={16} className="refresh-success-icon" />
+    ) : (
+      <Star size={16} fill={isPrimary ? "currentColor" : "none"} />
+    );
+  const duplicateIcon =
+    duplicateFeedback === "success" ? <Check size={16} className="refresh-success-icon" /> : <Copy size={16} />;
+  const deleteIcon =
+    deleteFeedback === "busy" ? (
+      <LoaderCircle size={16} className="spin" />
+    ) : deleteFeedback === "success" ? (
+      <Check size={16} className="refresh-success-icon" />
+    ) : (
+      <Trash2 size={16} />
+    );
 
   const changeSort = (nextKey: SortKey) => {
     if (nextKey === sortKey) {
@@ -611,23 +739,43 @@ const ObservePanel = ({
           <p>{config.startDate} 起 · {formatMoney(config.totalAmount)}</p>
         </div>
         <div className="icon-actions">
-          <button title="刷新净值" onClick={onRefresh} disabled={loading}>
-            <RefreshCw size={16} className={loading ? "spin" : ""} />
+          <button
+            title={refreshFeedback === "success" ? "刷新成功" : "刷新净值"}
+            aria-label={refreshFeedback === "success" ? "刷新成功" : "刷新净值"}
+            className={refreshFeedback === "success" && !loading ? "action-success" : ""}
+            onClick={onRefresh}
+            disabled={loading}
+          >
+            {refreshIcon}
           </button>
-          <button title="设为主配置" onClick={onPrimary} className={isPrimary ? "selected" : ""}>
-            <Star size={16} fill={isPrimary ? "currentColor" : "none"} />
+          <button
+            title={primaryFeedback === "success" ? "已设为主配置" : "设为主配置"}
+            onClick={onPrimary}
+            className={`${isPrimary ? "selected" : ""} ${primaryFeedback === "success" ? "action-success" : ""}`}
+          >
+            {primaryIcon}
           </button>
           <button title="编辑" onClick={onEdit}>
             <Pencil size={16} />
           </button>
-          <button title="复制配置" onClick={onDuplicate}>
-            <Copy size={16} />
+          <button
+            title={duplicateFeedback === "success" ? "已复制" : "复制配置"}
+            onClick={onDuplicate}
+            className={duplicateFeedback === "success" ? "action-success" : ""}
+          >
+            {duplicateIcon}
           </button>
-          <button title="删除" onClick={onDelete}>
-            <Trash2 size={16} />
+          <button
+            title={deleteFeedback === "success" ? "已删除" : "删除"}
+            onClick={onDelete}
+            className={deleteFeedback === "success" ? "action-success" : ""}
+            disabled={deleteFeedback === "busy"}
+          >
+            {deleteIcon}
           </button>
         </div>
       </div>
+      {refreshError ? <div className="panel-feedback error">{refreshError}</div> : null}
 
       <div className="metric-grid">
         <Metric label="组合总市值" value={formatMoney(observation?.totalMarketValue ?? 0)} />
@@ -692,6 +840,10 @@ interface EditPanelProps {
   form: PortfolioConfig;
   targetSum: number;
   errors: string[];
+  saveFeedback: ButtonFeedback;
+  saveError: string;
+  importFeedback: ButtonFeedback;
+  importError: string;
   importText: string;
   setImportText: (text: string) => void;
   onChange: (form: PortfolioConfig) => void;
@@ -699,6 +851,8 @@ interface EditPanelProps {
   onImport: () => void;
   onFileImport: (event: ChangeEvent<HTMLInputElement>) => void;
   loadingNameIds: Set<string>;
+  nameSuccessIds: Set<string>;
+  nameErrorIds: Set<string>;
   onAddFund: () => void;
   onAddCash: () => void;
   onUpdateHolding: (id: string, patch: Partial<HoldingConfig>) => void;
@@ -710,6 +864,10 @@ const EditPanel = ({
   form,
   targetSum,
   errors,
+  saveFeedback,
+  saveError,
+  importFeedback,
+  importError,
   importText,
   setImportText,
   onChange,
@@ -717,12 +875,32 @@ const EditPanel = ({
   onImport,
   onFileImport,
   loadingNameIds,
+  nameSuccessIds,
+  nameErrorIds,
   onAddFund,
   onAddCash,
   onUpdateHolding,
   onCompleteFundName,
   onRemoveHolding
-}: EditPanelProps) => (
+}: EditPanelProps) => {
+  const importButtonIcon =
+    importFeedback === "busy" ? (
+      <LoaderCircle size={15} className="spin" />
+    ) : importFeedback === "success" ? (
+      <Check size={15} className="refresh-success-icon" />
+    ) : (
+      <Upload size={15} />
+    );
+  const saveButtonIcon =
+    saveFeedback === "busy" ? (
+      <LoaderCircle size={16} className="spin" />
+    ) : saveFeedback === "success" ? (
+      <Check size={16} className="refresh-success-icon" />
+    ) : (
+      <Check size={16} />
+    );
+
+  return (
   <div className="panel">
     <div className="form-grid">
       <label>
@@ -839,8 +1017,10 @@ const EditPanel = ({
         placeholder="粘贴 JSON 文本"
       />
       <button className="secondary" onClick={onImport} disabled={!importText.trim()}>
-        提取基金代码
+        {importButtonIcon}
+        {importFeedback === "busy" ? "提取中" : importFeedback === "success" ? "已提取" : "提取基金代码"}
       </button>
+      {importError ? <div className="panel-feedback error">{importError}</div> : null}
     </section>
 
     <section>
@@ -890,7 +1070,9 @@ const EditPanel = ({
                 placeholder="名称"
                 onChange={(event) => onUpdateHolding(holding.id, { name: event.target.value })}
               />
-              {loadingNameIds.has(holding.id) ? <span>查询中</span> : null}
+              {loadingNameIds.has(holding.id) ? <span><LoaderCircle size={12} className="spin" /></span> : null}
+              {nameSuccessIds.has(holding.id) ? <span className="name-success"><Check size={12} /></span> : null}
+              {nameErrorIds.has(holding.id) ? <span className="name-error">!</span> : null}
             </div>
             <input
               type="number"
@@ -920,13 +1102,18 @@ const EditPanel = ({
       </div>
     </section>
 
-    {errors.length > 0 ? <div className="errors">{errors[0]}</div> : null}
-    <button className="save-button" onClick={onSave} disabled={errors.length > 0}>
-      <Check size={16} />
-      保存配置
+    {errors.length > 0 || saveError ? <div className="errors">{saveError || errors[0]}</div> : null}
+    <button
+      className={`save-button ${saveFeedback === "success" ? "action-success" : ""}`}
+      onClick={onSave}
+      disabled={errors.length > 0 || saveFeedback === "busy"}
+    >
+      {saveButtonIcon}
+      {saveFeedback === "busy" ? "保存中" : saveFeedback === "success" ? "已保存" : "保存配置"}
     </button>
   </div>
-);
+  );
+};
 
 const Metric = ({
   label,
