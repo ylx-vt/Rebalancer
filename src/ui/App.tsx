@@ -1226,25 +1226,29 @@ const OverviewPanel = ({ holdings }: { holdings: PortfolioObservation["holdings"
   );
 };
 
-const AllocationCompare = ({ holdings }: { holdings: PortfolioObservation["holdings"] }) => (
-  <section className="visual-card allocation-card">
-    <div className="section-head">
-      <h3>目标 / 当前占比</h3>
-    </div>
-    <div className="allocation-bars">
-      <AllocationStack holdings={holdings} mode="target" />
-      <AllocationStack holdings={holdings} mode="current" />
-    </div>
-    <div className="allocation-legend">
-      {holdings.map((item, index) => (
-        <span key={item.holding.id}>
-          <i style={{ background: chartColor(index) }} />
-          {item.holding.name}
-        </span>
-      ))}
-    </div>
-  </section>
-);
+const AllocationCompare = ({ holdings }: { holdings: PortfolioObservation["holdings"] }) => {
+  const sortedHoldings = [...holdings].sort((left, right) => right.targetPercent - left.targetPercent);
+
+  return (
+    <section className="visual-card allocation-card">
+      <div className="section-head">
+        <h3>目标 / 当前占比</h3>
+      </div>
+      <div className="allocation-bars">
+        <AllocationStack holdings={sortedHoldings} mode="target" />
+        <AllocationStack holdings={sortedHoldings} mode="current" />
+      </div>
+      <div className="allocation-legend">
+        {sortedHoldings.map((item, index) => (
+          <span key={item.holding.id}>
+            <i style={{ background: chartColor(index) }} />
+            {item.holding.name}
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+};
 
 const AllocationStack = ({
   holdings,
@@ -1256,14 +1260,7 @@ const AllocationStack = ({
   <div className="allocation-stack-row">
     <span>{mode === "target" ? "目标" : "当前"}</span>
     <div className="allocation-stack">
-      {[...holdings]
-        .map((item, index) => ({ item, index }))
-        .sort((left, right) => {
-          const leftValue = mode === "target" ? left.item.targetPercent : left.item.currentPercent;
-          const rightValue = mode === "target" ? right.item.targetPercent : right.item.currentPercent;
-          return rightValue - leftValue;
-        })
-        .map(({ item, index }) => {
+      {holdings.map((item, index) => {
         const value = mode === "target" ? item.targetPercent : item.currentPercent;
         return (
           <i
