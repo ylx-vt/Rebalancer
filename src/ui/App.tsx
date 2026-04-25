@@ -1,5 +1,5 @@
 import { ChangeEvent, CSSProperties, useEffect, useMemo, useState } from "react";
-import { Check, Pencil, Plus, RefreshCw, Star, Trash2, Upload, X } from "lucide-react";
+import { Check, Copy, Pencil, Plus, RefreshCw, Star, Trash2, Upload, X } from "lucide-react";
 import {
   DEFAULT_THRESHOLDS,
   calculatePortfolioObservation,
@@ -37,6 +37,25 @@ const createEmptyConfig = (): PortfolioConfig => ({
   createdAt: Date.now(),
   updatedAt: Date.now()
 });
+
+const createDuplicateName = (name: string, configs: PortfolioConfig[]) => {
+  const baseName = name.trim() || "未命名配置";
+  const firstName = `${baseName} 副本`;
+  const existingNames = new Set(configs.map((config) => config.name));
+
+  if (!existingNames.has(firstName)) {
+    return firstName;
+  }
+
+  for (let index = 2; index < 1000; index += 1) {
+    const nextName = `${firstName} ${index}`;
+    if (!existingNames.has(nextName)) {
+      return nextName;
+    }
+  }
+
+  return `${firstName} ${Date.now()}`;
+};
 
 const createFundHolding = (code = ""): HoldingConfig => ({
   id: uid(),
@@ -246,6 +265,41 @@ export const App = () => {
     setMessage("配置已删除");
   };
 
+  const duplicateConfig = (config: PortfolioConfig) => {
+    const now = Date.now();
+    const duplicate: PortfolioConfig = {
+      ...structuredClone(config),
+      id: uid(),
+      name: createDuplicateName(config.name, state.configs),
+      holdings: config.holdings.map((holding) => ({
+        ...holding,
+        id: uid()
+      })),
+      createdAt: now,
+      updatedAt: now
+    };
+
+    patchState((current) => {
+      const configIndex = current.configs.findIndex((item) => item.id === config.id);
+      const insertIndex = configIndex >= 0 ? configIndex + 1 : current.configs.length;
+      const configs = [
+        ...current.configs.slice(0, insertIndex),
+        duplicate,
+        ...current.configs.slice(insertIndex)
+      ];
+
+      return {
+        ...current,
+        configs,
+        selectedConfigId: duplicate.id
+      };
+    });
+    setForm(structuredClone(duplicate));
+    setActiveTab("edit");
+    setObservation(null);
+    setMessage("已复制配置副本");
+  };
+
   const setPrimary = (id: string) => {
     patchState((current) => ({ ...current, primaryConfigId: id, selectedConfigId: id }));
     setMessage("已设为主配置");
@@ -439,6 +493,7 @@ export const App = () => {
             onRefresh={() => void refreshObservation(selectedConfig, true)}
             onEdit={() => setActiveTab("edit")}
             onPrimary={() => selectedConfig && setPrimary(selectedConfig.id)}
+            onDuplicate={() => selectedConfig && duplicateConfig(selectedConfig)}
             onDelete={() => selectedConfig && deleteConfig(selectedConfig.id)}
           />
         ) : (
@@ -483,6 +538,7 @@ interface ObservePanelProps {
   onRefresh: () => void;
   onEdit: () => void;
   onPrimary: () => void;
+  onDuplicate: () => void;
   onDelete: () => void;
 }
 
@@ -495,6 +551,7 @@ const ObservePanel = ({
   onRefresh,
   onEdit,
   onPrimary,
+  onDuplicate,
   onDelete
 }: ObservePanelProps) => {
   const [sortKey, setSortKey] = useState<SortKey>("target");
@@ -563,6 +620,9 @@ const ObservePanel = ({
           <button title="编辑" onClick={onEdit}>
             <Pencil size={16} />
           </button>
+          <button title="复制配置" onClick={onDuplicate}>
+            <Copy size={16} />
+          </button>
           <button title="删除" onClick={onDelete}>
             <Trash2 size={16} />
           </button>
@@ -606,7 +666,11 @@ const ObservePanel = ({
 
         {view === "drift" ? (
           <div className="drift-view">
-            <ActionSummary items={actionItems} />
+            <ActionSummary
+              items={actionItems}
+              targetAmount={config.totalAmount}
+              totalMarketValue={observation?.totalMarketValue ?? config.totalAmount}
+            />
             <DriftRanking items={driftItems} maxAbsDrift={maxAbsDrift} />
           </div>
         ) : null}
@@ -920,14 +984,11 @@ const BenchmarkStrip = ({
     <span>同期基准</span>
     <div>
       {benchmarks.length > 0 ? (
-        benchmarks.map((item, index) => {
+        benchmarks.map((item) => {
           const diff = portfolioRate - item.returnRate;
           return (
             <article key={item.code} title={`${item.startDate} 至 ${item.endDate}`}>
-              <strong>
-                <span>{index + 1}</span>
-                {item.name}
-              </strong>
+              <strong>{item.name}</strong>
               <em className={toneClass(item.returnRate)}>{formatPercent(item.returnRate)}</em>
               <small className={toneClass(diff)}>组合 {diff >= 0 ? "领先" : "落后"} {formatPercent(Math.abs(diff))}</small>
             </article>
@@ -1101,15 +1162,31 @@ const DiagnosisItem = ({
   </div>
 );
 
-const ActionSummary = ({ items }: { items: PortfolioObservation["holdings"] }) => {
+const ActionSummary = ({
+  items,
+  targetAmount,
+  totalMarketValue
+}: {
+  items: PortfolioObservation["holdings"];
+  targetAmount: number;
+  totalMarketValue: number;
+}) => {
   const buyItems = items.filter((item) => item.rebalanceAmount > 0);
   const sellItems = items.filter((item) => item.rebalanceAmount < 0);
   const buyTotal = buyItems.reduce((sum, item) => sum + item.rebalanceAmount, 0);
   const sellTotal = sellItems.reduce((sum, item) => sum + Math.abs(item.rebalanceAmount), 0);
-  const turnover = Math.min(buyTotal, sellTotal);
-  const netCash = buyTotal - sellTotal;
+  const internalTurnover = Math.min(buyTotal, sellTotal);
+  const fundingGap = normalizeMoneyValue(targetAmount - totalMarketValue);
+  const turnoverRate = totalMarketValue > 0 ? internalTurnover / totalMarketValue : 0;
+  const fundingGapRate = targetAmount > 0 ? Math.abs(fundingGap) / targetAmount : 0;
   const leadBuy = buyItems[0];
   const leadSell = sellItems[0];
+  const fundingLabel = fundingGap >= 0 ? "另需投入" : "超出目标";
+  const fundingDetail =
+    fundingGap >= 0
+      ? "配置总金额减去当前组合总市值，表示回到目标投入规模还需要追加的外部资金。"
+      : "当前组合总市值高于配置总金额，表示超出目标投入规模的金额。";
+  const fundingTone = fundingGap >= 0 ? "positive" : "negative";
 
   return (
     <section className="visual-card action-card">
@@ -1117,32 +1194,58 @@ const ActionSummary = ({ items }: { items: PortfolioObservation["holdings"] }) =
         <h3>资金搬移摘要</h3>
       </div>
       <div className="action-summary-grid">
-        <div>
-          <span>卖出释放</span>
-          <strong className="negative">{formatMoney(sellTotal)}</strong>
+        <div className="primary">
+          <InfoHint
+            label="内部换手"
+            detail="正常情况下，卖出释放、买入补足和可对冲换手是同一个数：不改变组合总资金规模时，需要从超配持仓搬到低配持仓的金额。"
+          />
+          <strong>{formatMoney(internalTurnover)}</strong>
+          <small>占组合 {formatPercent(turnoverRate)}</small>
         </div>
-        <div>
-          <span>买入补足</span>
-          <strong className="positive">{formatMoney(buyTotal)}</strong>
-        </div>
-      </div>
-      <div className="action-flow">
-        <div className="action-flow-line">
-          <i className="sell" style={{ width: `${getActionWidth(sellTotal, buyTotal)}%` }} />
-          <i className="buy" style={{ width: `${getActionWidth(buyTotal, sellTotal)}%` }} />
-        </div>
-        <div className="action-flow-meta">
-          <span>可对冲换手 {formatMoney(turnover)}</span>
-          <span>{netCash >= 0 ? `另需投入 ${formatMoney(netCash)}` : `净流出 ${formatMoney(Math.abs(netCash))}`}</span>
+        <div className={fundingTone}>
+          <InfoHint label={fundingLabel} detail={fundingDetail} />
+          <strong>{formatMoney(Math.abs(fundingGap))}</strong>
+          <small>占目标 {formatPercent(fundingGapRate)}</small>
         </div>
       </div>
       <div className="action-focus">
         <ActionFocusItem label="最大卖出" item={leadSell} tone="negative" />
         <ActionFocusItem label="最大买入" item={leadBuy} tone="positive" />
       </div>
+      <div className="action-stats">
+        <ActionStat
+          label="换手率"
+          value={formatPercent(turnoverRate)}
+          detail="内部换手金额 / 当前组合总市值，用来衡量这次再平衡动作相对组合规模有多大。"
+        />
+        <ActionStat
+          label="卖出项"
+          value={`${sellItems.length} 只`}
+          detail="建议卖出的持仓数量，用来判断超配来源是否集中。"
+        />
+        <ActionStat
+          label="买入项"
+          value={`${buyItems.length} 只`}
+          detail="建议买入的持仓数量，用来判断低配补足是否分散。"
+        />
+      </div>
     </section>
   );
 };
+
+const InfoHint = ({ label, detail }: { label: string; detail: string }) => (
+  <span className="info-hint" tabIndex={0}>
+    <span>{label}</span>
+    <span className="info-detail">{detail}</span>
+  </span>
+);
+
+const ActionStat = ({ label, value, detail }: { label: string; value: string; detail: string }) => (
+  <div className="action-stat">
+    <InfoHint label={label} detail={detail} />
+    <strong>{value}</strong>
+  </div>
+);
 
 const ActionFocusItem = ({
   label,
@@ -1185,14 +1288,17 @@ const DriftRanking = ({
           const width = Math.min(50, (Math.abs(item.driftPercentPoints) / maxAbsDrift) * 50);
           const sideClass = item.driftPercentPoints >= 0 ? "over" : "under";
           return (
-            <div className="drift-row" key={item.holding.id}>
-              <span className="drift-name">
-                <StatusDot status={item.rebalanceStatus} detail={getStatusDetail(item)} />
-                {item.holding.name}
-              </span>
+            <div className="drift-row" key={item.holding.id} tabIndex={0}>
+              <div className="drift-copy">
+                <span className="drift-name">
+                  <StatusDot status={item.rebalanceStatus} detail={getStatusDetail(item)} />
+                  {item.holding.name}
+                </span>
+              </div>
               <div className="drift-axis">
                 <i className={`drift-bar ${sideClass}`} style={{ width: `${width}%` }} />
               </div>
+              <span className="drift-detail">{getDriftRankingDetail(item)}</span>
             </div>
           );
         })
@@ -1303,13 +1409,10 @@ const getNumericSortValue = (item: PortfolioObservation["holdings"][number], sor
 const readError = (error: unknown) => (error instanceof Error ? error.message : "操作失败");
 const formatMoney = (value: number) =>
   new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY", maximumFractionDigits: 2 }).format(value);
+const normalizeMoneyValue = (value: number) => (Math.abs(value) < 0.005 ? 0 : value);
 const formatPercent = (value: number) => `${(value * 100).toFixed(2)}%`;
 const signed = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
 const toneClass = (value: number) => (value > 0 ? "positive" : value < 0 ? "negative" : "neutral");
-const getActionWidth = (value: number, compareValue: number) => {
-  const maxValue = Math.max(value, compareValue, 1);
-  return Math.max(8, (value / maxValue) * 100);
-};
 const getOverviewDiagnosis = (counts: Record<PortfolioObservation["rebalanceStatus"], number>) => {
   if (counts.error > 0) {
     return "有持仓数据异常，先刷新或检查代码后再判断组合状态。";
@@ -1349,4 +1452,13 @@ const getStatusDetail = (item: PortfolioObservation["holdings"][number]) => {
   return `${statusLabel}：偏离 ${signed(item.driftPercentPoints)}pp，相对偏离 ${signed(
     item.relativeDriftPercent
   )}%`;
+};
+
+const getDriftRankingDetail = (item: PortfolioObservation["holdings"][number]) => {
+  if (item.error) {
+    return item.error;
+  }
+  const driftLabel = item.driftPercentPoints >= 0 ? "超配" : "低配";
+  const actionLabel = item.rebalanceAmount >= 0 ? "建议买入" : "建议卖出";
+  return `${item.holding.name}：${driftLabel} ${Math.abs(item.driftPercentPoints).toFixed(2)}pp，${actionLabel} ${formatMoney(Math.abs(item.rebalanceAmount))}`;
 };
