@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { BacktestResult, BacktestRuleResult } from "../domain/backtestTypes";
+import type { BacktestRangeLimitItem, BacktestResult, BacktestRuleResult } from "../domain/backtestTypes";
 
 const COLORS = ["#365f91", "#c9892b", "#6f8f52", "#9b4d55", "#4f7f7b", "#8b6bb1"];
 
@@ -19,6 +19,7 @@ export const BacktestResultView = ({
         <span>实际区间 {result.actualStartDate} 至 {result.actualEndDate}</span>
         <span>无风险收益率 {result.input.riskFreeRatePercent.toFixed(2)}%</span>
       </div>
+      <RangeAdjustmentNotice result={result} />
       <p>回测仅代表历史模拟，不代表未来表现；本期结果不含交易费用。</p>
     </header>
     <div className="observe-switch backtest-tabs" role="tablist" aria-label="回测结果">
@@ -37,6 +38,29 @@ export const BacktestResultView = ({
     {activeTab === "records" ? <RecordTab results={result.results} /> : null}
   </section>
 );
+
+const RangeAdjustmentNotice = ({ result }: { result: BacktestResult }) => {
+  const { startLimitedBy, endLimitedBy } = result.rangeAdjustment;
+  if (startLimitedBy.length === 0 && endLimitedBy.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="backtest-range-notice">
+      <strong>实际区间被历史净值覆盖范围收窄</strong>
+      {startLimitedBy.length > 0 ? (
+        <span>
+          起点被 {formatLimitItems(startLimitedBy)} 限制到 {result.actualStartDate}
+        </span>
+      ) : null}
+      {endLimitedBy.length > 0 ? (
+        <span>
+          终点被 {formatLimitItems(endLimitedBy)} 限制到 {result.actualEndDate}
+        </span>
+      ) : null}
+    </div>
+  );
+};
 
 const MetricTables = ({ results }: { results: BacktestRuleResult[] }) => (
   <div className="backtest-metrics">
@@ -241,6 +265,9 @@ const metricTone = (label: string, result: BacktestRuleResult) => {
   }
   return 0;
 };
+
+const formatLimitItems = (items: BacktestRangeLimitItem[]) =>
+  items.map((item) => `${item.name}${item.code ? `（${item.code}）` : ""}`).join("、");
 
 const formatMoney = (value: number) =>
   new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY", maximumFractionDigits: 0 }).format(value);

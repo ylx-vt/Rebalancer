@@ -3,6 +3,7 @@ import type {
   BacktestFrequency,
   BacktestHoldingState,
   BacktestInput,
+  BacktestRangeAdjustment,
   BacktestRebalanceRecord,
   BacktestResult,
   BacktestRule,
@@ -86,6 +87,13 @@ export const runBacktest = (
 
   const actualStartDate = timelineDates[0];
   const actualEndDate = timelineDates[timelineDates.length - 1];
+  const rangeAdjustment = createRangeAdjustment(
+    normalizedSeries,
+    input.startDate,
+    input.endDate,
+    actualStartDate,
+    actualEndDate
+  );
   const navLookup = createNavLookup(normalizedSeries, timelineDates);
   const checkDates = createFrequencyCheckDateSet(timelineDates);
   const results = input.rules.map((rule) =>
@@ -98,7 +106,37 @@ export const runBacktest = (
     requestedEndDate: input.endDate,
     actualStartDate,
     actualEndDate,
+    rangeAdjustment,
     results
+  };
+};
+
+const createRangeAdjustment = (
+  series: HoldingNavSeries[],
+  requestedStartDate: string,
+  requestedEndDate: string,
+  actualStartDate: string,
+  actualEndDate: string
+): BacktestRangeAdjustment => {
+  const fundRanges = series
+    .filter((item) => item.kind === "fund")
+    .map((item) => ({
+      holdingId: item.holdingId,
+      code: item.code,
+      name: item.name,
+      availableStartDate: item.points[0]?.date ?? requestedEndDate,
+      availableEndDate: item.points[item.points.length - 1]?.date ?? requestedStartDate
+    }));
+
+  return {
+    startLimitedBy:
+      actualStartDate > requestedStartDate
+        ? fundRanges.filter((item) => item.availableStartDate === actualStartDate)
+        : [],
+    endLimitedBy:
+      actualEndDate < requestedEndDate
+        ? fundRanges.filter((item) => item.availableEndDate === actualEndDate)
+        : []
   };
 };
 

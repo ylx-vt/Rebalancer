@@ -1571,6 +1571,24 @@ section {
   font-weight: 800;
 }
 
+.backtest-range-notice {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  color: #5a4632;
+  background: #fff7df;
+  border: 1px solid #ead28e;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.backtest-range-notice strong,
+.backtest-range-notice span {
+  display: block;
+}
+
 .backtest-tabs {
   width: 230px;
 }

@@ -107,7 +107,21 @@ export interface BacktestResult {
   requestedEndDate: string;
   actualStartDate: string;
   actualEndDate: string;
+  rangeAdjustment: BacktestRangeAdjustment;
   results: BacktestRuleResult[];
+}
+
+export interface BacktestRangeAdjustment {
+  startLimitedBy: BacktestRangeLimitItem[];
+  endLimitedBy: BacktestRangeLimitItem[];
+}
+
+export interface BacktestRangeLimitItem {
+  holdingId: string;
+  code?: string;
+  name: string;
+  availableStartDate: string;
+  availableEndDate: string;
 }
 
 export interface HistoricalSeriesCacheItem {

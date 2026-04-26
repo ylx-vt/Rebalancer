@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Check, Copy, LoaderCircle, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Copy, LoaderCircle, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { runBacktest, validateBacktestInput } from "../domain/backtest";
 import type { BacktestInput, BacktestResult, BacktestRule } from "../domain/backtestTypes";
 import type { AppState, PortfolioConfig } from "../domain/types";
@@ -25,36 +25,50 @@ const today = () => new Date().toISOString().slice(0, 10);
 export const BacktestPanel = ({ config, state, onStatePatch, onBack }: BacktestPanelProps) => {
   const initialInput = useMemo(() => createInitialInput(config, state.lastBacktestInput), [config?.id]);
   const [input, setInput] = useState<BacktestInput>(initialInput);
+  const inputRef = useRef<BacktestInput>(initialInput);
   const [forceRefresh, setForceRefresh] = useState(false);
   const [runState, setRunState] = useState<BacktestRunState>({ status: "idle" });
   const [activeTab, setActiveTab] = useState<"metrics" | "charts" | "records">("metrics");
   const errors = useMemo(() => validateBacktestInput(config, input), [config, input]);
 
+  useEffect(() => {
+    inputRef.current = input;
+  }, [input]);
+
+  const updateInput = (updater: (current: BacktestInput) => BacktestInput) => {
+    setInput((current) => {
+      const next = updater(current);
+      inputRef.current = next;
+      return next;
+    });
+    setRunState((current) => (current.status === "loading-data" ? current : { status: "idle" }));
+  };
+
   const run = async () => {
+    const runInput = normalizeInputRuleNames(structuredClone(inputRef.current));
+    inputRef.current = runInput;
+    setInput(runInput);
+    const runErrors = validateBacktestInput(config, runInput);
     if (!config) {
       setRunState({ status: "error", message: "还没有可用于回测的配置" });
       return;
     }
-    if (errors.length > 0) {
-      setRunState({ status: "error", message: errors[0] });
+    if (runErrors.length > 0) {
+      setRunState({ status: "error", message: runErrors[0] });
       return;
     }
 
     setRunState({ status: "loading-data" });
-    onStatePatch((current) => ({ ...current, lastBacktestInput: input }));
     try {
-      const loaded = await loadHistoricalNavSeriesForConfig(
-        config,
-        state,
-        input.startDate,
-        input.endDate,
-        forceRefresh
-      );
-      const result = runBacktest(config, input, loaded.series);
+      const [loaded] = await Promise.all([
+        loadHistoricalNavSeriesForConfig(config, state, runInput.startDate, runInput.endDate, forceRefresh),
+        delay(180)
+      ]);
+      const result = runBacktest(config, runInput, loaded.series);
       onStatePatch((current) => ({
         ...current,
         historicalSeriesCache: { ...(current.historicalSeriesCache ?? {}), ...loaded.cachePatch },
-        lastBacktestInput: input
+        lastBacktestInput: runInput
       }));
       setActiveTab("metrics");
       setRunState({ status: "success", result });
@@ -91,7 +105,7 @@ export const BacktestPanel = ({ config, state, onStatePatch, onBack }: BacktestP
             <input
               type="date"
               value={input.startDate}
-              onChange={(event) => setInput({ ...input, startDate: event.target.value })}
+              onChange={(event) => updateInput((current) => ({ ...current, startDate: event.target.value }))}
             />
           </label>
           <label>
@@ -99,7 +113,7 @@ export const BacktestPanel = ({ config, state, onStatePatch, onBack }: BacktestP
             <input
               type="date"
               value={input.endDate}
-              onChange={(event) => setInput({ ...input, endDate: event.target.value })}
+              onChange={(event) => updateInput((current) => ({ ...current, endDate: event.target.value }))}
             />
           </label>
           <label>
@@ -108,7 +122,7 @@ export const BacktestPanel = ({ config, state, onStatePatch, onBack }: BacktestP
               type="number"
               min="1"
               value={input.initialAmount}
-              onChange={(event) => setInput({ ...input, initialAmount: Number(event.target.value) })}
+              onChange={(event) => updateInput((current) => ({ ...current, initialAmount: Number(event.target.value) }))}
             />
           </label>
         </div>
@@ -119,7 +133,9 @@ export const BacktestPanel = ({ config, state, onStatePatch, onBack }: BacktestP
               type="number"
               step="0.1"
               value={input.riskFreeRatePercent}
-              onChange={(event) => setInput({ ...input, riskFreeRatePercent: Number(event.target.value) })}
+              onChange={(event) =>
+                updateInput((current) => ({ ...current, riskFreeRatePercent: Number(event.target.value) }))
+              }
             />
           </label>
           <label className="toggle-row">
@@ -141,28 +157,36 @@ export const BacktestPanel = ({ config, state, onStatePatch, onBack }: BacktestP
               rule={rule}
               canDelete={input.rules.length > 1}
               onChange={(nextRule) =>
-                setInput({
-                  ...input,
-                  rules: input.rules.map((item) => (item.id === rule.id ? nextRule : item))
-                })
+                updateInput((current) => ({
+                  ...current,
+                  rules: current.rules.map((item) => (item.id === rule.id ? nextRule : item))
+                }))
               }
               onCopy={() =>
                 input.rules.length < 6 &&
-                setInput({
-                  ...input,
-                  rules: [...input.rules, { ...rule, id: uid(), name: `${rule.name} 副本` }]
-                })
+                updateInput((current) => ({
+                  ...current,
+                  rules: [...current.rules, { ...rule, id: uid(), name: `${rule.name} 副本` }]
+                }))
               }
               onDelete={() =>
                 input.rules.length > 1 &&
-                setInput({ ...input, rules: input.rules.filter((item) => item.id !== rule.id) })
+                updateInput((current) => ({
+                  ...current,
+                  rules: current.rules.filter((item) => item.id !== rule.id)
+                }))
               }
             />
           ))}
         </div>
         <button
           className="secondary"
-          onClick={() => setInput({ ...input, rules: [...input.rules, createRule(input.rules.length + 1)] })}
+          onClick={() =>
+            updateInput((current) => ({
+              ...current,
+              rules: [...current.rules, createRule(current.rules.length + 1)]
+            }))
+          }
           disabled={input.rules.length >= 6}
         >
           <Plus size={15} />
@@ -191,7 +215,12 @@ export const BacktestPanel = ({ config, state, onStatePatch, onBack }: BacktestP
       ) : null}
 
       {runState.status === "success" ? (
-        <BacktestResultView result={runState.result} activeTab={activeTab} onTabChange={setActiveTab} />
+        <BacktestResultView
+          key={JSON.stringify(runState.result.input)}
+          result={runState.result}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+        />
       ) : null}
     </div>
   );
@@ -212,6 +241,13 @@ const BacktestRuleCard = ({
 }) => {
   const needsFrequency = rule.type === "fixed-frequency" || rule.type === "frequency-threshold";
   const needsThreshold = rule.type === "threshold" || rule.type === "frequency-threshold";
+  const updateRule = (patch: Partial<BacktestRule>) => {
+    const nextRule = { ...rule, ...patch };
+    onChange({
+      ...nextRule,
+      name: shouldAutoRenameRule(rule.name) ? createRuleName(nextRule) : nextRule.name
+    });
+  };
 
   return (
     <article className="backtest-rule-card">
@@ -229,7 +265,13 @@ const BacktestRuleCard = ({
           类型
           <select
             value={rule.type}
-            onChange={(event) => onChange(normalizeRuleForType(rule, event.target.value as BacktestRule["type"]))}
+            onChange={(event) => {
+              const nextRule = normalizeRuleForType(rule, event.target.value as BacktestRule["type"]);
+              onChange({
+                ...nextRule,
+                name: shouldAutoRenameRule(rule.name) ? createRuleName(nextRule) : nextRule.name
+              });
+            }}
           >
             <option value="buy-and-hold">不再平衡</option>
             <option value="fixed-frequency">固定频率再平衡</option>
@@ -240,7 +282,7 @@ const BacktestRuleCard = ({
         {needsFrequency ? (
           <label>
             频率
-            <select value={rule.frequency ?? "monthly"} onChange={(event) => onChange({ ...rule, frequency: event.target.value as BacktestRule["frequency"] })}>
+            <select value={rule.frequency ?? "monthly"} onChange={(event) => updateRule({ frequency: event.target.value as BacktestRule["frequency"] })}>
               <option value="monthly">每月</option>
               <option value="quarterly">每季度</option>
               <option value="semiannual">每半年</option>
@@ -257,14 +299,14 @@ const BacktestRuleCard = ({
                 min="0.1"
                 step="0.1"
                 value={rule.thresholdValue ?? 5}
-                onChange={(event) => onChange({ ...rule, thresholdValue: Number(event.target.value) })}
+                onChange={(event) => updateRule({ thresholdValue: Number(event.target.value) })}
               />
             </label>
             <label>
               模式
               <select
                 value={rule.thresholdMode ?? "absolute-pp"}
-                onChange={(event) => onChange({ ...rule, thresholdMode: event.target.value as BacktestRule["thresholdMode"] })}
+                onChange={(event) => updateRule({ thresholdMode: event.target.value as BacktestRule["thresholdMode"] })}
               >
                 <option value="absolute-pp">pp 偏离</option>
                 <option value="relative-percent">相对偏离 %</option>
@@ -315,7 +357,58 @@ const normalizeRuleForType = (rule: BacktestRule, type: BacktestRule["type"]): B
   thresholdValue: type === "threshold" || type === "frequency-threshold" ? rule.thresholdValue ?? 5 : undefined
 });
 
+const normalizeInputRuleNames = (input: BacktestInput): BacktestInput => ({
+  ...input,
+  rules: input.rules.map((rule) =>
+    shouldAutoRenameRule(rule.name) ? { ...rule, name: createRuleName(rule) } : rule
+  )
+});
+
+const createRuleName = (rule: BacktestRule) => {
+  if (rule.type === "buy-and-hold") {
+    return "不再平衡";
+  }
+  if (rule.type === "fixed-frequency") {
+    return `${frequencyLabel(rule.frequency)}再平衡`;
+  }
+  const threshold = thresholdLabel(rule);
+  if (rule.type === "threshold") {
+    return `${threshold}触发`;
+  }
+  return `${frequencyLabel(rule.frequency)}检查 + ${threshold}触发`;
+};
+
+const thresholdLabel = (rule: BacktestRule) =>
+  rule.thresholdMode === "relative-percent"
+    ? `相对偏离 ${formatNumber(rule.thresholdValue ?? 5)}% `
+    : `偏离 ${formatNumber(rule.thresholdValue ?? 5)}pp `;
+
+const frequencyLabel = (frequency?: BacktestRule["frequency"]) =>
+  frequency === "quarterly"
+    ? "季度"
+    : frequency === "semiannual"
+      ? "半年"
+      : frequency === "annual"
+        ? "年度"
+        : "月度";
+
+const formatNumber = (value: number) => (Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2))));
+
+const shouldAutoRenameRule = (name: string) => {
+  const trimmed = name.trim();
+  return (
+    !trimmed ||
+    /^不再平衡$/.test(trimmed) ||
+    /^(月度|季度|半年|年度)再平衡$/.test(trimmed) ||
+    /^偏离\s*\d+(?:\.\d+)?pp\s*触发$/.test(trimmed) ||
+    /^相对偏离\s*\d+(?:\.\d+)?%\s*触发$/.test(trimmed) ||
+    /^(月度|季度|半年|年度)检查\s*\+\s*(偏离\s*\d+(?:\.\d+)?pp|相对偏离\s*\d+(?:\.\d+)?%)\s*触发$/.test(trimmed) ||
+    /^新规则\s+\d+$/.test(trimmed)
+  );
+};
+
 const sumTarget = (config: PortfolioConfig) =>
   config.holdings.reduce((sum, holding) => sum + Number(holding.targetPercent || 0), 0);
 
 const readError = (error: unknown) => (error instanceof Error ? error.message : "回测失败");
+const delay = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
