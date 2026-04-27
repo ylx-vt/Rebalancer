@@ -1,0 +1,82 @@
+{
+  "benchmarkCodes": [
+    "000001",
+    "399006",
+    "HSTECH",
+    "NDX100"
+  ],
+  "createdAt": 1777035521571,
+  "holdings": [
+    {
+      "code": "005974",
+      "id": "d1a8cc6c-f569-435d-982e-34bc660b419a",
+      "kind": "fund",
+      "name": "东方红配置精选混合A",
+      "targetPercent": 30
+    },
+    {
+      "code": "015716",
+      "id": "70c619a3-bfc3-4392-8e43-c47488e70002",
+      "kind": "fund",
+      "name": "华夏稳享增利6个月滚动持有债A",
+      "targetPercent": 20
+    },
+    {
+      "code": "005984",
+      "id": "f4ea13ef-5077-48d5-8307-015734a3bb88",
+      "kind": "fund",
+      "name": "兴业聚华混合A",
+      "targetPercent": 10
+    },
+    {
+      "code": "008134",
+      "id": "b4f4db3b-8caf-480a-b95b-9f543b736661",
+      "kind": "fund",
+      "name": "鹏华优选价值股票A",
+      "targetPercent": 10
+    },
+    {
+      "code": "000628",
+      "id": "83a8bb34-7b46-4d14-bdc3-3bfc10d42e25",
+      "kind": "fund",
+      "name": "大成高鑫股票A",
+      "targetPercent": 10
+    },
+    {
+      "code": "000217",
+      "id": "f6e2ba04-1921-4a60-9f5c-6171f7ed8da6",
+      "kind": "fund",
+      "name": "华安黄金ETF联接C",
+      "targetPercent": 5
+    },
+    {
+      "code": "016702",
+      "id": "7fdbad72-d660-446b-b94e-5cfd58674186",
+      "kind": "fund",
+      "name": "银华海外数字经济量化选股混合发起式(QDII)C",
+      "targetPercent": 5
+    },
+    {
+      "code": "022184",
+      "id": "88f2ea19-912e-42b7-919b-522707836a97",
+      "kind": "fund",
+      "name": "富国全球科技互联网股票(QDII)C",
+      "targetPercent": 5
+    },
+    {
+      "id": "ce1e6e07-e086-4229-87d0-0c403fb4e133",
+      "kind": "cash",
+      "name": "现金",
+      "targetPercent": 5
+    }
+  ],
+  "id": "9d20d3f7-7765-40a4-87b3-f5fc68a07fcf",
+  "name": "26主配置1.0",
+  "startDate": "2026-01-01",
+  "thresholds": {
+    "absolutePercentPoints": 5,
+    "relativePercent": 25
+  },
+  "totalAmount": 1200000,
+  "updatedAt": 1777125174200
+}

@@ -1,14 +1,24 @@
-import type { AppState } from "../domain/types";
+import examplePortfolioConfig from "../data/examplePortfolioConfig.json";
+import type { AppState, PortfolioConfig } from "../domain/types";
 import { DEFAULT_THRESHOLDS } from "../domain/calculation";
 import { normalizeBenchmarkCodes } from "./benchmarkApi";
 
 const STORAGE_KEY = "rebalancer:v1";
+
+const createExampleConfig = (): PortfolioConfig => structuredClone(examplePortfolioConfig) as PortfolioConfig;
 
 export const createInitialState = (): AppState => ({
   schemaVersion: 1,
   configs: [],
   fundCache: {},
   historicalCache: {}
+});
+
+const createFirstRunState = (): AppState => ({
+  ...createInitialState(),
+  configs: [createExampleConfig()],
+  primaryConfigId: examplePortfolioConfig.id,
+  selectedConfigId: examplePortfolioConfig.id
 });
 
 const isChromeStorageAvailable = () =>
@@ -35,7 +45,7 @@ export const saveState = async (state: AppState): Promise<void> => {
 
 const normalizeState = (value: unknown): AppState => {
   if (!value || typeof value !== "object") {
-    return createInitialState();
+    return createFirstRunState();
   }
 
   const state = value as Partial<AppState>;

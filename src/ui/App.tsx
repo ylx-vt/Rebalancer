@@ -1,5 +1,17 @@
 import { ChangeEvent, CSSProperties, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Copy, LoaderCircle, Pencil, Play, Plus, RefreshCw, Star, Trash2, Upload } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Download,
+  LoaderCircle,
+  Pencil,
+  Play,
+  Plus,
+  RefreshCw,
+  Star,
+  Trash2,
+  Upload
+} from "lucide-react";
 import {
   DEFAULT_THRESHOLDS,
   calculatePortfolioObservation,
@@ -73,6 +85,80 @@ const createCashHolding = (): HoldingConfig => ({
   targetPercent: 0
 });
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const readString = (value: unknown, fallback = "") =>
+  typeof value === "string" ? value : fallback;
+
+const readNumber = (value: unknown, fallback: number) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+};
+
+const normalizeImportedHolding = (value: unknown): HoldingConfig => {
+  if (!isRecord(value)) {
+    throw new Error("持仓格式不正确");
+  }
+
+  const kind = value.kind === "cash" ? "cash" : "fund";
+  const code = readString(value.code).trim();
+  const name = readString(value.name, kind === "cash" ? "现金" : code).trim();
+
+  return {
+    id: uid(),
+    kind,
+    code: kind === "fund" ? code : undefined,
+    name: name || (kind === "cash" ? "现金" : code),
+    targetPercent: readNumber(value.targetPercent, 0)
+  };
+};
+
+const normalizeImportedConfig = (raw: unknown): PortfolioConfig => {
+  if (!isRecord(raw)) {
+    throw new Error("配置文件必须是单个组合配置对象");
+  }
+  if (!Array.isArray(raw.holdings)) {
+    throw new Error("配置文件缺少 holdings 持仓列表");
+  }
+
+  const now = Date.now();
+  const holdings = raw.holdings.map(normalizeImportedHolding);
+
+  return {
+    id: uid(),
+    name: readString(raw.name, "导入配置").trim() || "导入配置",
+    totalAmount: readNumber(raw.totalAmount, 100000),
+    startDate: readString(raw.startDate, today()),
+    benchmarkCodes: normalizeBenchmarkCodes(
+      Array.isArray(raw.benchmarkCodes)
+        ? raw.benchmarkCodes.filter((code): code is string => typeof code === "string")
+        : undefined
+    ),
+    thresholds: {
+      absolutePercentPoints: readNumber(
+        isRecord(raw.thresholds) ? raw.thresholds.absolutePercentPoints : undefined,
+        DEFAULT_THRESHOLDS.absolutePercentPoints
+      ),
+      relativePercent: readNumber(
+        isRecord(raw.thresholds) ? raw.thresholds.relativePercent : undefined,
+        DEFAULT_THRESHOLDS.relativePercent
+      )
+    },
+    holdings,
+    createdAt: now,
+    updatedAt: now
+  };
+};
+
+const createExportFileName = (config: PortfolioConfig) => {
+  const baseName = (config.name.trim() || "rebalancer-config")
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .replace(/\s+/g, "-")
+    .slice(0, 80);
+  return `${baseName || "rebalancer-config"}.json`;
+};
+
 type SortKey = "holding" | "target" | "current" | "drift" | "rebalance";
 type SortDirection = "asc" | "desc";
 type ObserveView = "overview" | "drift" | "detail";
@@ -94,6 +180,9 @@ export const App = () => {
   const [saveError, setSaveError] = useState("");
   const [importFeedback, setImportFeedback] = useState<ButtonFeedback>("idle");
   const [importError, setImportError] = useState("");
+  const [configImportFeedback, setConfigImportFeedback] = useState<ButtonFeedback>("idle");
+  const [configImportError, setConfigImportError] = useState("");
+  const [exportFeedback, setExportFeedback] = useState<ButtonFeedback>("idle");
   const [primaryFeedback, setPrimaryFeedback] = useState<ButtonFeedback>("idle");
   const [duplicateFeedback, setDuplicateFeedback] = useState<ButtonFeedback>("idle");
   const [deleteFeedback, setDeleteFeedback] = useState<ButtonFeedback>("idle");
@@ -527,6 +616,42 @@ export const App = () => {
     event.target.value = "";
   };
 
+  const exportConfig = () => {
+    const blob = new Blob([JSON.stringify(form, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = createExportFileName(form);
+    link.click();
+    URL.revokeObjectURL(url);
+    setExportFeedback("success");
+    resetTimedFeedback(setExportFeedback);
+  };
+
+  const importConfigFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setConfigImportFeedback("busy");
+    setConfigImportError("");
+    try {
+      const imported = normalizeImportedConfig(JSON.parse(await file.text()));
+      setForm(imported);
+      setObservation(null);
+      setActiveTab("edit");
+      setConfigImportFeedback("success");
+      resetTimedFeedback(setConfigImportFeedback);
+    } catch (error) {
+      setConfigImportFeedback("error");
+      setConfigImportError(readError(error));
+      resetTimedFeedback(setConfigImportFeedback);
+    } finally {
+      event.target.value = "";
+    }
+  };
+
   if (!loaded) {
     return <div className="boot">Rebalancer</div>;
   }
@@ -604,10 +729,15 @@ export const App = () => {
             saveError={saveError}
             importFeedback={importFeedback}
             importError={importError}
+            configImportFeedback={configImportFeedback}
+            configImportError={configImportError}
+            exportFeedback={exportFeedback}
             importText={importText}
             setImportText={setImportText}
             onChange={setForm}
             onSave={() => void saveCurrentConfig()}
+            onExport={exportConfig}
+            onConfigFileImport={importConfigFile}
             onImport={() => void importCodes(importText)}
             onFileImport={importFile}
             loadingNameIds={loadingNameIds}
@@ -858,10 +988,15 @@ interface EditPanelProps {
   saveError: string;
   importFeedback: ButtonFeedback;
   importError: string;
+  configImportFeedback: ButtonFeedback;
+  configImportError: string;
+  exportFeedback: ButtonFeedback;
   importText: string;
   setImportText: (text: string) => void;
   onChange: (form: PortfolioConfig) => void;
   onSave: () => void;
+  onExport: () => void;
+  onConfigFileImport: (event: ChangeEvent<HTMLInputElement>) => void;
   onImport: () => void;
   onFileImport: (event: ChangeEvent<HTMLInputElement>) => void;
   loadingNameIds: Set<string>;
@@ -882,10 +1017,15 @@ const EditPanel = ({
   saveError,
   importFeedback,
   importError,
+  configImportFeedback,
+  configImportError,
+  exportFeedback,
   importText,
   setImportText,
   onChange,
   onSave,
+  onExport,
+  onConfigFileImport,
   onImport,
   onFileImport,
   loadingNameIds,
@@ -913,9 +1053,42 @@ const EditPanel = ({
     ) : (
       <Check size={16} />
     );
+  const configImportIcon =
+    configImportFeedback === "busy" ? (
+      <LoaderCircle size={15} className="spin" />
+    ) : configImportFeedback === "success" ? (
+      <Check size={15} className="refresh-success-icon" />
+    ) : (
+      <Upload size={15} />
+    );
+  const exportIcon =
+    exportFeedback === "success" ? (
+      <Check size={15} className="refresh-success-icon" />
+    ) : (
+      <Download size={15} />
+    );
 
   return (
   <div className="panel">
+    <div className="panel-title">
+      <div>
+        <h2>配置</h2>
+        <p>编辑单一组合配置</p>
+      </div>
+      <div className="config-file-actions">
+        <button className={`secondary ${exportFeedback === "success" ? "action-success" : ""}`} onClick={onExport}>
+          {exportIcon}
+          {exportFeedback === "success" ? "已导出" : "导出配置"}
+        </button>
+        <label className={`file-button ${configImportFeedback === "success" ? "action-success" : ""}`}>
+          {configImportIcon}
+          {configImportFeedback === "busy" ? "导入中" : configImportFeedback === "success" ? "已导入" : "导入配置"}
+          <input type="file" accept="application/json,.json" onChange={onConfigFileImport} />
+        </label>
+      </div>
+    </div>
+    {configImportError ? <div className="panel-feedback error">{configImportError}</div> : null}
+
     <div className="form-grid">
       <label>
         配置名称
